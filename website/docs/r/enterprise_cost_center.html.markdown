@@ -41,6 +41,6 @@ The following additional attributes are exported:
 GitHub Enterprise Cost Center can be imported using the `enterprise_slug` and the `cost_center_id`, separated by a `/` character.
 
 ```
-$ terraform import github_enterprise_cost_center.example example-enterprise/cc_123456
+$ terraform import github_enterprise_cost_center.example example-enterprise/<cost_center_id>
 ```
 
