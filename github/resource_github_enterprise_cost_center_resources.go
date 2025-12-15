@@ -2,11 +2,15 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/google/go-github/v67/github"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
@@ -121,10 +125,19 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 
 	if len(toRemoveUsers)+len(toRemoveOrgs)+len(toRemoveRepos) > 0 {
 		log.Printf("[INFO] Removing enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
-		_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, enterpriseCostCenterResourcesRequest{
-			Users:         toRemoveUsers,
-			Organizations: toRemoveOrgs,
-			Repositories:  toRemoveRepos,
+		err := resource.RetryContext(ctx, 30*time.Second, func() *resource.RetryError {
+			_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, enterpriseCostCenterResourcesRequest{
+				Users:         toRemoveUsers,
+				Organizations: toRemoveOrgs,
+				Repositories:  toRemoveRepos,
+			})
+			if err == nil {
+				return nil
+			}
+			if isRetryableGithubResponseError(err) {
+				return resource.RetryableError(err)
+			}
+			return resource.NonRetryableError(err)
 		})
 		if err != nil {
 			return err
@@ -133,10 +146,19 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 
 	if len(toAddUsers)+len(toAddOrgs)+len(toAddRepos) > 0 {
 		log.Printf("[INFO] Assigning enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
-		_, err := enterpriseCostCenterAssignResources(ctx, client, enterpriseSlug, costCenterID, enterpriseCostCenterResourcesRequest{
-			Users:         toAddUsers,
-			Organizations: toAddOrgs,
-			Repositories:  toAddRepos,
+		err := resource.RetryContext(ctx, 30*time.Second, func() *resource.RetryError {
+			_, err := enterpriseCostCenterAssignResources(ctx, client, enterpriseSlug, costCenterID, enterpriseCostCenterResourcesRequest{
+				Users:         toAddUsers,
+				Organizations: toAddOrgs,
+				Repositories:  toAddRepos,
+			})
+			if err == nil {
+				return nil
+			}
+			if isRetryableGithubResponseError(err) {
+				return resource.RetryableError(err)
+			}
+			return resource.NonRetryableError(err)
 		})
 		if err != nil {
 			return err
@@ -219,6 +241,19 @@ func getStringSetOrEmpty(d *schema.ResourceData, key string) *schema.Set {
 	}
 
 	return set
+}
+
+func isRetryableGithubResponseError(err error) bool {
+	var ghErr *github.ErrorResponse
+	if errors.As(err, &ghErr) && ghErr.Response != nil {
+		switch ghErr.Response.StatusCode {
+		case 404, 409, 500, 502, 503, 504:
+			return true
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 func diffStringSlices(current []string, desired []string) (toAdd []string, toRemove []string) {
