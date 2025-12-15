@@ -35,15 +35,15 @@ resource "github_enterprise_cost_center_resources" "example" {
 
 * `enterprise_slug` - (Required) The slug of the enterprise.
 * `cost_center_id` - (Required) The cost center ID.
-* `users` - (Optional) The usernames assigned to this cost center. Defaults to an empty list.
-* `organizations` - (Optional) The organization logins assigned to this cost center. Defaults to an empty list.
-* `repositories` - (Optional) The repositories (full name) assigned to this cost center. Defaults to an empty list.
+* `users` - (Optional) The usernames assigned to this cost center. If omitted, treated as an empty set.
+* `organizations` - (Optional) The organization logins assigned to this cost center. If omitted, treated as an empty set.
+* `repositories` - (Optional) The repositories (full name) assigned to this cost center. If omitted, treated as an empty set.
 
 ## Import
 
 GitHub Enterprise Cost Center Resources can be imported using the `enterprise_slug` and the `cost_center_id`, separated by a `/` character.
 
 ```
-$ terraform import github_enterprise_cost_center_resources.example example-enterprise/cc_123456
+$ terraform import github_enterprise_cost_center_resources.example example-enterprise/<cost_center_id>
 ```
 
