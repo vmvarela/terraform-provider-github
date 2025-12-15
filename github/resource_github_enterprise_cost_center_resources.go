@@ -35,19 +35,19 @@ func resourceGithubEnterpriseCostCenterResources() *schema.Resource {
 			},
 			"users": {
 				Type:        schema.TypeSet,
-				Required:    true,
+				Optional:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "The usernames assigned to this cost center.",
 			},
 			"organizations": {
 				Type:        schema.TypeSet,
-				Required:    true,
+				Optional:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "The organization logins assigned to this cost center.",
 			},
 			"repositories": {
 				Type:        schema.TypeSet,
-				Required:    true,
+				Optional:    true,
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "The repositories (full name) assigned to this cost center.",
 			},
@@ -100,15 +100,18 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
+		if is404(err) {
+			return fmt.Errorf("cost center %q not found in enterprise %q (check enterprise_slug matches the cost center's enterprise)", costCenterID, enterpriseSlug)
+		}
 		return err
 	}
 	if strings.EqualFold(cc.State, "deleted") {
 		return fmt.Errorf("cannot modify cost center %q resources because it is archived", costCenterID)
 	}
 
-	desiredUsers := expandStringSet(d.Get("users").(*schema.Set))
-	desiredOrgs := expandStringSet(d.Get("organizations").(*schema.Set))
-	desiredRepos := expandStringSet(d.Get("repositories").(*schema.Set))
+	desiredUsers := expandStringSet(getStringSetOrEmpty(d, "users"))
+	desiredOrgs := expandStringSet(getStringSetOrEmpty(d, "organizations"))
+	desiredRepos := expandStringSet(getStringSetOrEmpty(d, "repositories"))
 
 	currentUsers, currentOrgs, currentRepos := enterpriseCostCenterSplitResources(cc.Resources)
 
@@ -202,6 +205,20 @@ func expandStringSet(set *schema.Set) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func getStringSetOrEmpty(d *schema.ResourceData, key string) *schema.Set {
+	v, ok := d.GetOk(key)
+	if !ok || v == nil {
+		return schema.NewSet(schema.HashString, []any{})
+	}
+
+	set, ok := v.(*schema.Set)
+	if !ok || set == nil {
+		return schema.NewSet(schema.HashString, []any{})
+	}
+
+	return set
 }
 
 func diffStringSlices(current []string, desired []string) (toAdd []string, toRemove []string) {

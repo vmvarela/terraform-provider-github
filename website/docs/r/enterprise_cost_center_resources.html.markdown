@@ -11,6 +11,8 @@ This resource allows you to manage which users, organizations, and repositories 
 
 The `users`, `organizations`, and `repositories` arguments are authoritative: on every apply, Terraform will add and remove assignments to match exactly what is configured.
 
+Note: `enterprise_slug` must match the enterprise where the cost center was created. If they don't match, GitHub will return `404 Not Found` for the cost center ID.
+
 ## Example Usage
 
 ```
@@ -33,9 +35,9 @@ resource "github_enterprise_cost_center_resources" "example" {
 
 * `enterprise_slug` - (Required) The slug of the enterprise.
 * `cost_center_id` - (Required) The cost center ID.
-* `users` - (Required) The usernames assigned to this cost center.
-* `organizations` - (Required) The organization logins assigned to this cost center.
-* `repositories` - (Required) The repositories (full name) assigned to this cost center.
+* `users` - (Optional) The usernames assigned to this cost center. Defaults to an empty list.
+* `organizations` - (Optional) The organization logins assigned to this cost center. Defaults to an empty list.
+* `repositories` - (Optional) The repositories (full name) assigned to this cost center. Defaults to an empty list.
 
 ## Import
 
