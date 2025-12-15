@@ -146,11 +146,17 @@ func TestAccGithubEnterpriseCostCenterResources(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 				ImportStateIdFunc: func(s *terraform.State) (string, error) {
-					rs, ok := s.RootModule().Resources["github_enterprise_cost_center.test"]
+					rs, ok := s.RootModule().Resources["github_enterprise_cost_center_resources.test"]
 					if !ok {
 						return "", fmt.Errorf("resource not found in state")
 					}
-					return fmt.Sprintf("%s/%s", testEnterprise, rs.Primary.ID), nil
+
+					enterpriseSlug := rs.Primary.Attributes["enterprise_slug"]
+					costCenterID := rs.Primary.Attributes["cost_center_id"]
+					if enterpriseSlug == "" || costCenterID == "" {
+						return "", fmt.Errorf("missing enterprise_slug or cost_center_id in state")
+					}
+					return fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID), nil
 				},
 			},
 		},
