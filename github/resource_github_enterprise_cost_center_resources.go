@@ -69,10 +69,12 @@ func resourceGithubEnterpriseCostCenterResourcesCreate(d *schema.ResourceData, m
 
 func resourceGithubEnterpriseCostCenterResourcesRead(d *schema.ResourceData, meta any) error {
 	client := meta.(*Owner).v3client
-	enterpriseSlug := d.Get("enterprise_slug").(string)
-	costCenterID := d.Get("cost_center_id").(string)
+	enterpriseSlug, costCenterID, err := parseTwoPartID(d.Id(), "enterprise_slug", "cost_center_id")
+	if err != nil {
+		return err
+	}
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	ctx := context.WithValue(context.Background(), ctxId, d.Id())
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -88,6 +90,9 @@ func resourceGithubEnterpriseCostCenterResourcesRead(d *schema.ResourceData, met
 	sort.Strings(orgs)
 	sort.Strings(repos)
 
+	_ = d.Set("enterprise_slug", enterpriseSlug)
+	_ = d.Set("cost_center_id", costCenterID)
+
 	_ = d.Set("users", stringSliceToAnySlice(users))
 	_ = d.Set("organizations", stringSliceToAnySlice(orgs))
 	_ = d.Set("repositories", stringSliceToAnySlice(repos))
@@ -97,10 +102,12 @@ func resourceGithubEnterpriseCostCenterResourcesRead(d *schema.ResourceData, met
 
 func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, meta any) error {
 	client := meta.(*Owner).v3client
-	enterpriseSlug := d.Get("enterprise_slug").(string)
-	costCenterID := d.Get("cost_center_id").(string)
+	enterpriseSlug, costCenterID, err := parseTwoPartID(d.Id(), "enterprise_slug", "cost_center_id")
+	if err != nil {
+		return err
+	}
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	ctx := context.WithValue(context.Background(), ctxId, d.Id())
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -170,10 +177,12 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 
 func resourceGithubEnterpriseCostCenterResourcesDelete(d *schema.ResourceData, meta any) error {
 	client := meta.(*Owner).v3client
-	enterpriseSlug := d.Get("enterprise_slug").(string)
-	costCenterID := d.Get("cost_center_id").(string)
+	enterpriseSlug, costCenterID, err := parseTwoPartID(d.Id(), "enterprise_slug", "cost_center_id")
+	if err != nil {
+		return err
+	}
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	ctx := context.WithValue(context.Background(), ctxId, d.Id())
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
