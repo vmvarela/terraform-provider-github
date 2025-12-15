@@ -1,0 +1,93 @@
+package github
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+)
+
+func dataSourceGithubEnterpriseCostCenter() *schema.Resource {
+	return &schema.Resource{
+		Read: dataSourceGithubEnterpriseCostCenterRead,
+
+		Schema: map[string]*schema.Schema{
+			"enterprise_slug": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "The slug of the enterprise.",
+			},
+			"cost_center_id": {
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "The ID of the cost center.",
+			},
+			"name": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The name of the cost center.",
+			},
+			"state": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The state of the cost center.",
+			},
+			"azure_subscription": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The Azure subscription associated with the cost center.",
+			},
+			"resources": {
+				Type:     schema.TypeList,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"type": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"name": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func dataSourceGithubEnterpriseCostCenterRead(d *schema.ResourceData, meta any) error {
+	client := meta.(*Owner).v3client
+	enterpriseSlug := d.Get("enterprise_slug").(string)
+	costCenterID := d.Get("cost_center_id").(string)
+
+	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+
+	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
+	if err != nil {
+		return err
+	}
+
+	d.SetId(costCenterID)
+	_ = d.Set("name", cc.Name)
+
+	state := strings.ToLower(cc.State)
+	if state == "" {
+		state = "active"
+	}
+	_ = d.Set("state", state)
+	_ = d.Set("azure_subscription", cc.AzureSubscription)
+
+	resources := make([]map[string]any, 0)
+	for _, r := range cc.Resources {
+		resources = append(resources, map[string]any{
+			"type": r.Type,
+			"name": r.Name,
+		})
+	}
+	_ = d.Set("resources", resources)
+
+	return nil
+}
