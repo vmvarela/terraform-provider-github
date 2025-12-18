@@ -290,6 +290,10 @@ func Provider() *schema.Provider {
 			"github_enterprise":                                                     dataSourceGithubEnterprise(),
 			"github_enterprise_cost_center":                                         dataSourceGithubEnterpriseCostCenter(),
 			"github_enterprise_cost_centers":                                        dataSourceGithubEnterpriseCostCenters(),
+			"github_enterprise_scim_groups":                                         dataSourceGithubEnterpriseSCIMGroups(),
+			"github_enterprise_scim_group":                                          dataSourceGithubEnterpriseSCIMGroup(),
+			"github_enterprise_scim_users":                                          dataSourceGithubEnterpriseSCIMUsers(),
+			"github_enterprise_scim_user":                                           dataSourceGithubEnterpriseSCIMUser(),
 			"github_repository_environment_deployment_policies":                     dataSourceGithubRepositoryEnvironmentDeploymentPolicies(),
 		},
 	}
