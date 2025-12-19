@@ -10,18 +10,19 @@ import (
 	"time"
 
 	"github.com/google/go-github/v67/github"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func resourceGithubEnterpriseCostCenterResources() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceGithubEnterpriseCostCenterResourcesCreate,
-		Read:   resourceGithubEnterpriseCostCenterResourcesRead,
-		Update: resourceGithubEnterpriseCostCenterResourcesUpdate,
-		Delete: resourceGithubEnterpriseCostCenterResourcesDelete,
+		CreateContext: resourceGithubEnterpriseCostCenterResourcesCreate,
+		ReadContext:   resourceGithubEnterpriseCostCenterResourcesRead,
+		UpdateContext: resourceGithubEnterpriseCostCenterResourcesUpdate,
+		DeleteContext: resourceGithubEnterpriseCostCenterResourcesDelete,
 		Importer: &schema.ResourceImporter{
-			State: resourceGithubEnterpriseCostCenterResourcesImport,
+			StateContext: resourceGithubEnterpriseCostCenterResourcesImport,
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -59,22 +60,22 @@ func resourceGithubEnterpriseCostCenterResources() *schema.Resource {
 	}
 }
 
-func resourceGithubEnterpriseCostCenterResourcesCreate(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterResourcesCreate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
 	d.SetId(buildTwoPartID(enterpriseSlug, costCenterID))
-	return resourceGithubEnterpriseCostCenterResourcesUpdate(d, meta)
+	return resourceGithubEnterpriseCostCenterResourcesUpdate(ctx, d, meta)
 }
 
-func resourceGithubEnterpriseCostCenterResourcesRead(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterResourcesRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug, costCenterID, err := parseTwoPartID(d.Id(), "enterprise_slug", "cost_center_id")
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
-	ctx := context.WithValue(context.Background(), ctxId, d.Id())
+	ctx = context.WithValue(ctx, ctxId, d.Id())
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -82,7 +83,7 @@ func resourceGithubEnterpriseCostCenterResourcesRead(d *schema.ResourceData, met
 			d.SetId("")
 			return nil
 		}
-		return err
+		return diag.FromErr(err)
 	}
 
 	users, orgs, repos := enterpriseCostCenterSplitResources(cc.Resources)
@@ -100,24 +101,24 @@ func resourceGithubEnterpriseCostCenterResourcesRead(d *schema.ResourceData, met
 	return nil
 }
 
-func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterResourcesUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug, costCenterID, err := parseTwoPartID(d.Id(), "enterprise_slug", "cost_center_id")
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
-	ctx := context.WithValue(context.Background(), ctxId, d.Id())
+	ctx = context.WithValue(ctx, ctxId, d.Id())
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
 		if is404(err) {
-			return fmt.Errorf("cost center %q not found in enterprise %q (check enterprise_slug matches the cost center's enterprise)", costCenterID, enterpriseSlug)
+			return diag.FromErr(fmt.Errorf("cost center %q not found in enterprise %q (check enterprise_slug matches the cost center's enterprise)", costCenterID, enterpriseSlug))
 		}
-		return err
+		return diag.FromErr(err)
 	}
 	if strings.EqualFold(cc.State, "deleted") {
-		return fmt.Errorf("cannot modify cost center %q resources because it is archived", costCenterID)
+		return diag.FromErr(fmt.Errorf("cannot modify cost center %q resources because it is archived", costCenterID))
 	}
 
 	desiredUsers := expandStringSet(getStringSetOrEmpty(d, "users"))
@@ -182,17 +183,17 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 
 		for _, batch := range chunk(toRemoveUsers, maxResourcesPerRequest) {
 			if err := retryRemove(enterpriseCostCenterResourcesRequest{Users: batch}); err != nil {
-				return err
+				return diag.FromErr(err)
 			}
 		}
 		for _, batch := range chunk(toRemoveOrgs, maxResourcesPerRequest) {
 			if err := retryRemove(enterpriseCostCenterResourcesRequest{Organizations: batch}); err != nil {
-				return err
+				return diag.FromErr(err)
 			}
 		}
 		for _, batch := range chunk(toRemoveRepos, maxResourcesPerRequest) {
 			if err := retryRemove(enterpriseCostCenterResourcesRequest{Repositories: batch}); err != nil {
-				return err
+				return diag.FromErr(err)
 			}
 		}
 	}
@@ -202,39 +203,39 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 
 		for _, batch := range chunk(toAddUsers, maxResourcesPerRequest) {
 			if err := retryAssign(enterpriseCostCenterResourcesRequest{Users: batch}); err != nil {
-				return err
+				return diag.FromErr(err)
 			}
 		}
 		for _, batch := range chunk(toAddOrgs, maxResourcesPerRequest) {
 			if err := retryAssign(enterpriseCostCenterResourcesRequest{Organizations: batch}); err != nil {
-				return err
+				return diag.FromErr(err)
 			}
 		}
 		for _, batch := range chunk(toAddRepos, maxResourcesPerRequest) {
 			if err := retryAssign(enterpriseCostCenterResourcesRequest{Repositories: batch}); err != nil {
-				return err
+				return diag.FromErr(err)
 			}
 		}
 	}
 
-	return resourceGithubEnterpriseCostCenterResourcesRead(d, meta)
+	return resourceGithubEnterpriseCostCenterResourcesRead(ctx, d, meta)
 }
 
-func resourceGithubEnterpriseCostCenterResourcesDelete(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterResourcesDelete(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug, costCenterID, err := parseTwoPartID(d.Id(), "enterprise_slug", "cost_center_id")
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
-	ctx := context.WithValue(context.Background(), ctxId, d.Id())
+	ctx = context.WithValue(ctx, ctxId, d.Id())
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
 		if is404(err) {
 			return nil
 		}
-		return err
+		return diag.FromErr(err)
 	}
 
 	// If the cost center is archived, treat deletion as a no-op.
@@ -285,24 +286,24 @@ func resourceGithubEnterpriseCostCenterResourcesDelete(d *schema.ResourceData, m
 
 	for _, batch := range chunk(users, maxResourcesPerRequest) {
 		if err := retryRemove(enterpriseCostCenterResourcesRequest{Users: batch}); err != nil {
-			return err
+			return diag.FromErr(err)
 		}
 	}
 	for _, batch := range chunk(orgs, maxResourcesPerRequest) {
 		if err := retryRemove(enterpriseCostCenterResourcesRequest{Organizations: batch}); err != nil {
-			return err
+			return diag.FromErr(err)
 		}
 	}
 	for _, batch := range chunk(repos, maxResourcesPerRequest) {
 		if err := retryRemove(enterpriseCostCenterResourcesRequest{Repositories: batch}); err != nil {
-			return err
+			return diag.FromErr(err)
 		}
 	}
 
 	return nil
 }
 
-func resourceGithubEnterpriseCostCenterResourcesImport(d *schema.ResourceData, meta any) ([]*schema.ResourceData, error) {
+func resourceGithubEnterpriseCostCenterResourcesImport(ctx context.Context, d *schema.ResourceData, meta any) ([]*schema.ResourceData, error) {
 	parts := strings.Split(d.Id(), "/")
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid import specified: supplied import must be written as <enterprise_slug>/<cost_center_id>")
