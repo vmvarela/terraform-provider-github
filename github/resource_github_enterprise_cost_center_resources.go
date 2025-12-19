@@ -130,14 +130,12 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 	toAddOrgs, toRemoveOrgs := diffStringSlices(currentOrgs, desiredOrgs)
 	toAddRepos, toRemoveRepos := diffStringSlices(currentRepos, desiredRepos)
 
-	if len(toRemoveUsers)+len(toRemoveOrgs)+len(toRemoveRepos) > 0 {
-		log.Printf("[INFO] Removing enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
-		err := resource.RetryContext(ctx, 30*time.Second, func() *resource.RetryError {
-			_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, enterpriseCostCenterResourcesRequest{
-				Users:         toRemoveUsers,
-				Organizations: toRemoveOrgs,
-				Repositories:  toRemoveRepos,
-			})
+	const maxResourcesPerRequest = 50
+	const costCenterResourcesRetryTimeout = 5 * time.Minute
+
+	retryRemove := func(req enterpriseCostCenterResourcesRequest) error {
+		return resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
+			_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, req)
 			if err == nil {
 				return nil
 			}
@@ -146,29 +144,76 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(d *schema.ResourceData, m
 			}
 			return resource.NonRetryableError(err)
 		})
-		if err != nil {
-			return err
+	}
+
+	retryAssign := func(req enterpriseCostCenterResourcesRequest) error {
+		return resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
+			_, err := enterpriseCostCenterAssignResources(ctx, client, enterpriseSlug, costCenterID, req)
+			if err == nil {
+				return nil
+			}
+			if isRetryableGithubResponseError(err) {
+				return resource.RetryableError(err)
+			}
+			return resource.NonRetryableError(err)
+		})
+	}
+
+	chunk := func(items []string, size int) [][]string {
+		if len(items) == 0 {
+			return nil
+		}
+		if size <= 0 {
+			size = len(items)
+		}
+		chunks := make([][]string, 0, (len(items)+size-1)/size)
+		for start := 0; start < len(items); start += size {
+			end := start + size
+			if end > len(items) {
+				end = len(items)
+			}
+			chunks = append(chunks, items[start:end])
+		}
+		return chunks
+	}
+
+	if len(toRemoveUsers)+len(toRemoveOrgs)+len(toRemoveRepos) > 0 {
+		log.Printf("[INFO] Removing enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
+
+		for _, batch := range chunk(toRemoveUsers, maxResourcesPerRequest) {
+			if err := retryRemove(enterpriseCostCenterResourcesRequest{Users: batch}); err != nil {
+				return err
+			}
+		}
+		for _, batch := range chunk(toRemoveOrgs, maxResourcesPerRequest) {
+			if err := retryRemove(enterpriseCostCenterResourcesRequest{Organizations: batch}); err != nil {
+				return err
+			}
+		}
+		for _, batch := range chunk(toRemoveRepos, maxResourcesPerRequest) {
+			if err := retryRemove(enterpriseCostCenterResourcesRequest{Repositories: batch}); err != nil {
+				return err
+			}
 		}
 	}
 
 	if len(toAddUsers)+len(toAddOrgs)+len(toAddRepos) > 0 {
 		log.Printf("[INFO] Assigning enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
-		err := resource.RetryContext(ctx, 30*time.Second, func() *resource.RetryError {
-			_, err := enterpriseCostCenterAssignResources(ctx, client, enterpriseSlug, costCenterID, enterpriseCostCenterResourcesRequest{
-				Users:         toAddUsers,
-				Organizations: toAddOrgs,
-				Repositories:  toAddRepos,
-			})
-			if err == nil {
-				return nil
+
+		for _, batch := range chunk(toAddUsers, maxResourcesPerRequest) {
+			if err := retryAssign(enterpriseCostCenterResourcesRequest{Users: batch}); err != nil {
+				return err
 			}
-			if isRetryableGithubResponseError(err) {
-				return resource.RetryableError(err)
+		}
+		for _, batch := range chunk(toAddOrgs, maxResourcesPerRequest) {
+			if err := retryAssign(enterpriseCostCenterResourcesRequest{Organizations: batch}); err != nil {
+				return err
 			}
-			return resource.NonRetryableError(err)
-		})
-		if err != nil {
-			return err
+		}
+		for _, batch := range chunk(toAddRepos, maxResourcesPerRequest) {
+			if err := retryAssign(enterpriseCostCenterResourcesRequest{Repositories: batch}); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -202,12 +247,59 @@ func resourceGithubEnterpriseCostCenterResourcesDelete(d *schema.ResourceData, m
 		return nil
 	}
 
-	_, err = enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, enterpriseCostCenterResourcesRequest{
-		Users:         users,
-		Organizations: orgs,
-		Repositories:  repos,
-	})
-	return err
+	const maxResourcesPerRequest = 50
+	const costCenterResourcesRetryTimeout = 5 * time.Minute
+
+	retryRemove := func(req enterpriseCostCenterResourcesRequest) error {
+		return resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
+			_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, req)
+			if err == nil {
+				return nil
+			}
+			if isRetryableGithubResponseError(err) {
+				return resource.RetryableError(err)
+			}
+			return resource.NonRetryableError(err)
+		})
+	}
+
+	chunk := func(items []string, size int) [][]string {
+		if len(items) == 0 {
+			return nil
+		}
+		if size <= 0 {
+			size = len(items)
+		}
+		chunks := make([][]string, 0, (len(items)+size-1)/size)
+		for start := 0; start < len(items); start += size {
+			end := start + size
+			if end > len(items) {
+				end = len(items)
+			}
+			chunks = append(chunks, items[start:end])
+		}
+		return chunks
+	}
+
+	log.Printf("[INFO] Removing all enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
+
+	for _, batch := range chunk(users, maxResourcesPerRequest) {
+		if err := retryRemove(enterpriseCostCenterResourcesRequest{Users: batch}); err != nil {
+			return err
+		}
+	}
+	for _, batch := range chunk(orgs, maxResourcesPerRequest) {
+		if err := retryRemove(enterpriseCostCenterResourcesRequest{Organizations: batch}); err != nil {
+			return err
+		}
+	}
+	for _, batch := range chunk(repos, maxResourcesPerRequest) {
+		if err := retryRemove(enterpriseCostCenterResourcesRequest{Repositories: batch}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func resourceGithubEnterpriseCostCenterResourcesImport(d *schema.ResourceData, meta any) ([]*schema.ResourceData, error) {
