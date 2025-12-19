@@ -6,17 +6,18 @@ import (
 	"log"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func resourceGithubEnterpriseCostCenter() *schema.Resource {
 	return &schema.Resource{
-		Create: resourceGithubEnterpriseCostCenterCreate,
-		Read:   resourceGithubEnterpriseCostCenterRead,
-		Update: resourceGithubEnterpriseCostCenterUpdate,
-		Delete: resourceGithubEnterpriseCostCenterDelete,
+		CreateContext: resourceGithubEnterpriseCostCenterCreate,
+		ReadContext:   resourceGithubEnterpriseCostCenterRead,
+		UpdateContext: resourceGithubEnterpriseCostCenterUpdate,
+		DeleteContext: resourceGithubEnterpriseCostCenterDelete,
 		Importer: &schema.ResourceImporter{
-			State: resourceGithubEnterpriseCostCenterImport,
+			StateContext: resourceGithubEnterpriseCostCenterImport,
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -63,33 +64,33 @@ func resourceGithubEnterpriseCostCenter() *schema.Resource {
 	}
 }
 
-func resourceGithubEnterpriseCostCenterCreate(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterCreate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	name := d.Get("name").(string)
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, name))
+	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, name))
 	log.Printf("[INFO] Creating enterprise cost center: %s (%s)", name, enterpriseSlug)
 
 	cc, err := enterpriseCostCenterCreate(ctx, client, enterpriseSlug, name)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	if cc == nil || cc.ID == "" {
-		return fmt.Errorf("failed to create cost center: missing id in response")
+		return diag.FromErr(fmt.Errorf("failed to create cost center: missing id in response"))
 	}
 
 	d.SetId(cc.ID)
-	return resourceGithubEnterpriseCostCenterRead(d, meta)
+	return resourceGithubEnterpriseCostCenterRead(ctx, d, meta)
 }
 
-func resourceGithubEnterpriseCostCenterRead(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Id()
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -98,7 +99,7 @@ func resourceGithubEnterpriseCostCenterRead(d *schema.ResourceData, meta any) er
 			d.SetId("")
 			return nil
 		}
-		return err
+		return diag.FromErr(err)
 	}
 
 	_ = d.Set("name", cc.Name)
@@ -122,19 +123,19 @@ func resourceGithubEnterpriseCostCenterRead(d *schema.ResourceData, meta any) er
 	return nil
 }
 
-func resourceGithubEnterpriseCostCenterUpdate(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Id()
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 	if strings.EqualFold(cc.State, "deleted") {
-		return fmt.Errorf("cannot update cost center %q because it is archived", costCenterID)
+		return diag.FromErr(fmt.Errorf("cannot update cost center %q because it is archived", costCenterID))
 	}
 
 	if d.HasChange("name") {
@@ -142,19 +143,19 @@ func resourceGithubEnterpriseCostCenterUpdate(d *schema.ResourceData, meta any) 
 		log.Printf("[INFO] Updating enterprise cost center: %s/%s", enterpriseSlug, costCenterID)
 		_, err := enterpriseCostCenterUpdate(ctx, client, enterpriseSlug, costCenterID, name)
 		if err != nil {
-			return err
+			return diag.FromErr(err)
 		}
 	}
 
-	return resourceGithubEnterpriseCostCenterRead(d, meta)
+	return resourceGithubEnterpriseCostCenterRead(ctx, d, meta)
 }
 
-func resourceGithubEnterpriseCostCenterDelete(d *schema.ResourceData, meta any) error {
+func resourceGithubEnterpriseCostCenterDelete(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Id()
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 	log.Printf("[INFO] Archiving enterprise cost center: %s/%s", enterpriseSlug, costCenterID)
 
 	_, err := enterpriseCostCenterArchive(ctx, client, enterpriseSlug, costCenterID)
@@ -162,13 +163,13 @@ func resourceGithubEnterpriseCostCenterDelete(d *schema.ResourceData, meta any) 
 		if is404(err) {
 			return nil
 		}
-		return err
+		return diag.FromErr(err)
 	}
 
 	return nil
 }
 
-func resourceGithubEnterpriseCostCenterImport(d *schema.ResourceData, meta any) ([]*schema.ResourceData, error) {
+func resourceGithubEnterpriseCostCenterImport(ctx context.Context, d *schema.ResourceData, meta any) ([]*schema.ResourceData, error) {
 	parts := strings.Split(d.Id(), "/")
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("invalid import specified: supplied import must be written as <enterprise_slug>/<cost_center_id>")
