@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
 func dataSourceGithubEnterpriseCostCenters() *schema.Resource {
 	return &schema.Resource{
-		Read: dataSourceGithubEnterpriseCostCentersRead,
+		ReadContext: dataSourceGithubEnterpriseCostCentersRead,
 
 		Schema: map[string]*schema.Schema{
 			"enterprise_slug": {
@@ -62,7 +63,7 @@ func dataSourceGithubEnterpriseCostCenters() *schema.Resource {
 	}
 }
 
-func dataSourceGithubEnterpriseCostCentersRead(d *schema.ResourceData, meta any) error {
+func dataSourceGithubEnterpriseCostCentersRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	state := ""
@@ -70,10 +71,10 @@ func dataSourceGithubEnterpriseCostCentersRead(d *schema.ResourceData, meta any)
 		state = v.(string)
 	}
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/cost-centers", enterpriseSlug))
+	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/cost-centers", enterpriseSlug))
 	centers, err := enterpriseCostCentersList(ctx, client, enterpriseSlug, state)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	items := make([]any, 0, len(centers))
