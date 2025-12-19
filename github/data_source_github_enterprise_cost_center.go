@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func dataSourceGithubEnterpriseCostCenter() *schema.Resource {
 	return &schema.Resource{
-		Read: dataSourceGithubEnterpriseCostCenterRead,
+		ReadContext: dataSourceGithubEnterpriseCostCenterRead,
 
 		Schema: map[string]*schema.Schema{
 			"enterprise_slug": {
@@ -58,16 +59,16 @@ func dataSourceGithubEnterpriseCostCenter() *schema.Resource {
 	}
 }
 
-func dataSourceGithubEnterpriseCostCenterRead(d *schema.ResourceData, meta any) error {
+func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	ctx := context.WithValue(context.Background(), ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 
 	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
 	if err != nil {
-		return err
+		return diag.FromErr(err)
 	}
 
 	d.SetId(costCenterID)
