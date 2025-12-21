@@ -211,6 +211,8 @@ func Provider() *schema.Provider {
 			"github_enterprise_actions_runner_group":                                resourceGithubActionsEnterpriseRunnerGroup(),
 			"github_enterprise_actions_workflow_permissions":                        resourceGithubEnterpriseActionsWorkflowPermissions(),
 			"github_enterprise_security_analysis_settings":                          resourceGithubEnterpriseSecurityAnalysisSettings(),
+			"github_enterprise_cost_center":                                         resourceGithubEnterpriseCostCenter(),
+			"github_enterprise_cost_center_resources":                               resourceGithubEnterpriseCostCenterResources(),
 			"github_workflow_repository_permissions":                                resourceGithubWorkflowRepositoryPermissions(),
 		},
 
@@ -290,6 +292,8 @@ func Provider() *schema.Provider {
 			"github_enterprise_scim_group":                                          dataSourceGithubEnterpriseSCIMGroup(),
 			"github_enterprise_scim_users":                                          dataSourceGithubEnterpriseSCIMUsers(),
 			"github_enterprise_scim_user":                                           dataSourceGithubEnterpriseSCIMUser(),
+			"github_enterprise_cost_center":                                         dataSourceGithubEnterpriseCostCenter(),
+			"github_enterprise_cost_centers":                                        dataSourceGithubEnterpriseCostCenters(),
 			"github_repository_environment_deployment_policies":                     dataSourceGithubRepositoryEnvironmentDeploymentPolicies(),
 		},
 	}
