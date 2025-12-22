@@ -61,7 +61,7 @@ type enterpriseCostCenterRemoveResponse struct {
 	Message string `json:"message"`
 }
 
-func enterpriseCostCentersList(ctx context.Context, client *github.Client, enterpriseSlug string, state string) ([]enterpriseCostCenter, error) {
+func enterpriseCostCentersList(ctx context.Context, client *github.Client, enterpriseSlug, state string) ([]enterpriseCostCenter, error) {
 	u, err := url.Parse(fmt.Sprintf("enterprises/%s/settings/billing/cost-centers", enterpriseSlug))
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func enterpriseCostCentersList(ctx context.Context, client *github.Client, enter
 	return result.CostCenters, nil
 }
 
-func enterpriseCostCenterGet(ctx context.Context, client *github.Client, enterpriseSlug string, costCenterID string) (*enterpriseCostCenter, error) {
+func enterpriseCostCenterGet(ctx context.Context, client *github.Client, enterpriseSlug, costCenterID string) (*enterpriseCostCenter, error) {
 	req, err := client.NewRequest("GET", fmt.Sprintf("enterprises/%s/settings/billing/cost-centers/%s", enterpriseSlug, costCenterID), nil)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func enterpriseCostCenterGet(ctx context.Context, client *github.Client, enterpr
 	return &result, nil
 }
 
-func enterpriseCostCenterCreate(ctx context.Context, client *github.Client, enterpriseSlug string, name string) (*enterpriseCostCenter, error) {
+func enterpriseCostCenterCreate(ctx context.Context, client *github.Client, enterpriseSlug, name string) (*enterpriseCostCenter, error) {
 	req, err := client.NewRequest("POST", fmt.Sprintf("enterprises/%s/settings/billing/cost-centers", enterpriseSlug), &enterpriseCostCenterCreateRequest{Name: name})
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func enterpriseCostCenterCreate(ctx context.Context, client *github.Client, ente
 	return &result, nil
 }
 
-func enterpriseCostCenterUpdate(ctx context.Context, client *github.Client, enterpriseSlug string, costCenterID string, name string) (*enterpriseCostCenter, error) {
+func enterpriseCostCenterUpdate(ctx context.Context, client *github.Client, enterpriseSlug, costCenterID, name string) (*enterpriseCostCenter, error) {
 	req, err := client.NewRequest("PATCH", fmt.Sprintf("enterprises/%s/settings/billing/cost-centers/%s", enterpriseSlug, costCenterID), &enterpriseCostCenterUpdateRequest{Name: name})
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func enterpriseCostCenterUpdate(ctx context.Context, client *github.Client, ente
 	return &result, nil
 }
 
-func enterpriseCostCenterArchive(ctx context.Context, client *github.Client, enterpriseSlug string, costCenterID string) (*enterpriseCostCenterArchiveResponse, error) {
+func enterpriseCostCenterArchive(ctx context.Context, client *github.Client, enterpriseSlug, costCenterID string) (*enterpriseCostCenterArchiveResponse, error) {
 	req, err := client.NewRequest("DELETE", fmt.Sprintf("enterprises/%s/settings/billing/cost-centers/%s", enterpriseSlug, costCenterID), nil)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func enterpriseCostCenterArchive(ctx context.Context, client *github.Client, ent
 	return &result, nil
 }
 
-func enterpriseCostCenterAssignResources(ctx context.Context, client *github.Client, enterpriseSlug string, costCenterID string, reqBody enterpriseCostCenterResourcesRequest) (*enterpriseCostCenterAssignResponse, error) {
+func enterpriseCostCenterAssignResources(ctx context.Context, client *github.Client, enterpriseSlug, costCenterID string, reqBody enterpriseCostCenterResourcesRequest) (*enterpriseCostCenterAssignResponse, error) {
 	req, err := client.NewRequest("POST", fmt.Sprintf("enterprises/%s/settings/billing/cost-centers/%s/resource", enterpriseSlug, costCenterID), &reqBody)
 	if err != nil {
 		return nil, err
@@ -162,7 +162,8 @@ func enterpriseCostCenterAssignResources(ctx context.Context, client *github.Cli
 	return &result, nil
 }
 
-func enterpriseCostCenterRemoveResources(ctx context.Context, client *github.Client, enterpriseSlug string, costCenterID string, reqBody enterpriseCostCenterResourcesRequest) (*enterpriseCostCenterRemoveResponse, error) {
+//nolint:unparam
+func enterpriseCostCenterRemoveResources(ctx context.Context, client *github.Client, enterpriseSlug, costCenterID string, reqBody enterpriseCostCenterResourcesRequest) (*enterpriseCostCenterRemoveResponse, error) {
 	req, err := client.NewRequest("DELETE", fmt.Sprintf("enterprises/%s/settings/billing/cost-centers/%s/resource", enterpriseSlug, costCenterID), &reqBody)
 	if err != nil {
 		return nil, err
@@ -177,7 +178,7 @@ func enterpriseCostCenterRemoveResources(ctx context.Context, client *github.Cli
 	return &result, nil
 }
 
-func enterpriseCostCenterSplitResources(resources []enterpriseCostCenterResource) (users []string, organizations []string, repositories []string) {
+func enterpriseCostCenterSplitResources(resources []enterpriseCostCenterResource) (users, organizations, repositories []string) {
 	for _, r := range resources {
 		switch strings.ToLower(r.Type) {
 		case "user":
