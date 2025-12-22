@@ -49,7 +49,7 @@ func TestAccGithubEnterpriseCostCentersDataSource(t *testing.T) {
 	})
 }
 
-func testAccCheckEnterpriseCostCentersListContains(costCenterResourceName string, dataSourceName string) resource.TestCheckFunc {
+func testAccCheckEnterpriseCostCentersListContains(costCenterResourceName, dataSourceName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		cc, ok := s.RootModule().Resources[costCenterResourceName]
 		if !ok {

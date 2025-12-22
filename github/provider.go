@@ -291,19 +291,16 @@ func Provider() *schema.Provider {
 			"github_user_external_identity":                                         dataSourceGithubUserExternalIdentity(),
 			"github_users":                                                          dataSourceGithubUsers(),
 			"github_enterprise":                                                     dataSourceGithubEnterprise(),
-<<<<<<< HEAD
 			"github_enterprise_cost_center":                                         dataSourceGithubEnterpriseCostCenter(),
 			"github_enterprise_cost_centers":                                        dataSourceGithubEnterpriseCostCenters(),
 			"github_enterprise_scim_groups":                                         dataSourceGithubEnterpriseSCIMGroups(),
 			"github_enterprise_scim_group":                                          dataSourceGithubEnterpriseSCIMGroup(),
 			"github_enterprise_scim_users":                                          dataSourceGithubEnterpriseSCIMUsers(),
 			"github_enterprise_scim_user":                                           dataSourceGithubEnterpriseSCIMUser(),
-=======
 			"github_enterprise_team":                                                dataSourceGithubEnterpriseTeam(),
 			"github_enterprise_teams":                                               dataSourceGithubEnterpriseTeams(),
 			"github_enterprise_team_membership":                                     dataSourceGithubEnterpriseTeamMembership(),
 			"github_enterprise_team_organizations":                                  dataSourceGithubEnterpriseTeamOrganizations(),
->>>>>>> enterprise-teams
 			"github_repository_environment_deployment_policies":                     dataSourceGithubRepositoryEnvironmentDeploymentPolicies(),
 		},
 	}
