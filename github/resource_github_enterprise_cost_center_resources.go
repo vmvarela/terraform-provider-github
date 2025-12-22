@@ -135,44 +135,45 @@ func resourceGithubEnterpriseCostCenterResourcesUpdate(ctx context.Context, d *s
 	const costCenterResourcesRetryTimeout = 5 * time.Minute
 
 	retryRemove := func(req enterpriseCostCenterResourcesRequest) error {
+		//nolint:staticcheck
 		return resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
 			_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, req)
 			if err == nil {
 				return nil
 			}
 			if isRetryableGithubResponseError(err) {
+				//nolint:staticcheck
 				return resource.RetryableError(err)
 			}
+			//nolint:staticcheck
 			return resource.NonRetryableError(err)
 		})
 	}
 
 	retryAssign := func(req enterpriseCostCenterResourcesRequest) error {
+		//nolint:staticcheck
 		return resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
 			_, err := enterpriseCostCenterAssignResources(ctx, client, enterpriseSlug, costCenterID, req)
 			if err == nil {
 				return nil
 			}
 			if isRetryableGithubResponseError(err) {
+				//nolint:staticcheck
 				return resource.RetryableError(err)
 			}
+			//nolint:staticcheck
 			return resource.NonRetryableError(err)
 		})
 	}
 
-	chunk := func(items []string, size int) [][]string {
+	chunk := func(items []string, _ int) [][]string {
 		if len(items) == 0 {
 			return nil
 		}
-		if size <= 0 {
-			size = len(items)
-		}
+		const size = maxResourcesPerRequest
 		chunks := make([][]string, 0, (len(items)+size-1)/size)
 		for start := 0; start < len(items); start += size {
-			end := start + size
-			if end > len(items) {
-				end = len(items)
-			}
+			end := min(start+size, len(items))
 			chunks = append(chunks, items[start:end])
 		}
 		return chunks
@@ -252,14 +253,17 @@ func resourceGithubEnterpriseCostCenterResourcesDelete(ctx context.Context, d *s
 	const costCenterResourcesRetryTimeout = 5 * time.Minute
 
 	retryRemove := func(req enterpriseCostCenterResourcesRequest) error {
+		//nolint:staticcheck
 		return resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
 			_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, req)
 			if err == nil {
 				return nil
 			}
 			if isRetryableGithubResponseError(err) {
+				//nolint:staticcheck
 				return resource.RetryableError(err)
 			}
+			//nolint:staticcheck
 			return resource.NonRetryableError(err)
 		})
 	}
@@ -273,10 +277,7 @@ func resourceGithubEnterpriseCostCenterResourcesDelete(ctx context.Context, d *s
 		}
 		chunks := make([][]string, 0, (len(items)+size-1)/size)
 		for start := 0; start < len(items); start += size {
-			end := start + size
-			if end > len(items) {
-				end = len(items)
-			}
+			end := min(start+size, len(items))
 			chunks = append(chunks, items[start:end])
 		}
 		return chunks
@@ -358,7 +359,7 @@ func isRetryableGithubResponseError(err error) bool {
 	return false
 }
 
-func diffStringSlices(current []string, desired []string) (toAdd []string, toRemove []string) {
+func diffStringSlices(current, desired []string) (toAdd, toRemove []string) {
 	cur := schema.NewSet(schema.HashString, stringSliceToAnySlice(current))
 	des := schema.NewSet(schema.HashString, stringSliceToAnySlice(desired))
 
