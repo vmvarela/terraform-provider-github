@@ -17,6 +17,11 @@ Deleting this resource archives the cost center (GitHub calls this state `delete
 resource "github_enterprise_cost_center" "example" {
   enterprise_slug = "example-enterprise"
   name            = "platform-cost-center"
+
+  # Authoritatively manage assignments (Terraform will add/remove to match).
+  users         = ["alice", "bob"]
+  organizations = ["octo-org"]
+  repositories  = ["octo-org/app"]
 }
 ```
 
@@ -24,6 +29,9 @@ resource "github_enterprise_cost_center" "example" {
 
 * `enterprise_slug` - (Required) The slug of the enterprise.
 * `name` - (Required) The name of the cost center.
+* `users` - (Optional) Set of usernames to assign to the cost center. Assignment is authoritative.
+* `organizations` - (Optional) Set of organization logins to assign to the cost center. Assignment is authoritative.
+* `repositories` - (Optional) Set of repositories (full name, e.g. `org/repo`) to assign to the cost center. Assignment is authoritative.
 
 ## Attributes Reference
 
@@ -35,6 +43,9 @@ The following additional attributes are exported:
 * `resources` - A list of assigned resources.
   * `type` - The resource type.
   * `name` - The resource identifier (username, organization login, or repository full name).
+* `users` - The usernames currently assigned to the cost center (mirrors the authoritative input).
+* `organizations` - The organization logins currently assigned to the cost center.
+* `repositories` - The repositories currently assigned to the cost center.
 
 ## Import
 
