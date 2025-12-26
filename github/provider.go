@@ -215,7 +215,6 @@ func Provider() *schema.Provider {
 			"github_actions_organization_workflow_permissions":                      resourceGithubActionsOrganizationWorkflowPermissions(),
 			"github_enterprise_security_analysis_settings":                          resourceGithubEnterpriseSecurityAnalysisSettings(),
 			"github_enterprise_cost_center":                                         resourceGithubEnterpriseCostCenter(),
-			"github_enterprise_cost_center_resources":                               resourceGithubEnterpriseCostCenterResources(),
 			"github_workflow_repository_permissions":                                resourceGithubWorkflowRepositoryPermissions(),
 		},
 
