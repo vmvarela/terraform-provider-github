@@ -48,13 +48,8 @@ variable "repositories" {
 resource "github_enterprise_cost_center" "example" {
   enterprise_slug = var.enterprise_slug
   name            = var.cost_center_name
-}
 
-# Authoritative assignments: Terraform will add/remove to match these lists.
-resource "github_enterprise_cost_center_resources" "example" {
-  enterprise_slug = var.enterprise_slug
-  cost_center_id  = github_enterprise_cost_center.example.id
-
+  # Authoritative assignments: Terraform will add/remove to match these lists.
   users         = var.users
   organizations = var.organizations
   repositories  = var.repositories
@@ -63,8 +58,6 @@ resource "github_enterprise_cost_center_resources" "example" {
 data "github_enterprise_cost_center" "by_id" {
   enterprise_slug = var.enterprise_slug
   cost_center_id  = github_enterprise_cost_center.example.id
-
-  depends_on = [github_enterprise_cost_center_resources.example]
 }
 
 data "github_enterprise_cost_centers" "active" {
@@ -87,17 +80,20 @@ output "cost_center" {
 output "cost_center_resources" {
   description = "Effective assignments (read from API)"
   value = {
-    users         = sort(tolist(github_enterprise_cost_center_resources.example.users))
-    organizations = sort(tolist(github_enterprise_cost_center_resources.example.organizations))
-    repositories  = sort(tolist(github_enterprise_cost_center_resources.example.repositories))
+    users         = sort(tolist(github_enterprise_cost_center.example.users))
+    organizations = sort(tolist(github_enterprise_cost_center.example.organizations))
+    repositories  = sort(tolist(github_enterprise_cost_center.example.repositories))
   }
 }
 
 output "cost_center_from_data_source" {
   description = "Cost center fetched by data source"
   value = {
-    id    = data.github_enterprise_cost_center.by_id.cost_center_id
-    name  = data.github_enterprise_cost_center.by_id.name
-    state = data.github_enterprise_cost_center.by_id.state
+    id            = data.github_enterprise_cost_center.by_id.cost_center_id
+    name          = data.github_enterprise_cost_center.by_id.name
+    state         = data.github_enterprise_cost_center.by_id.state
+    users         = sort(tolist(data.github_enterprise_cost_center.by_id.users))
+    organizations = sort(tolist(data.github_enterprise_cost_center.by_id.organizations))
+    repositories  = sort(tolist(data.github_enterprise_cost_center.by_id.repositories))
   }
 }

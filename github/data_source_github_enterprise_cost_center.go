@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -38,6 +39,24 @@ func dataSourceGithubEnterpriseCostCenter() *schema.Resource {
 				Type:        schema.TypeString,
 				Computed:    true,
 				Description: "The Azure subscription associated with the cost center.",
+			},
+			"users": {
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "The usernames assigned to this cost center.",
+			},
+			"organizations": {
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "The organization logins assigned to this cost center.",
+			},
+			"repositories": {
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "The repositories (full name) assigned to this cost center.",
 			},
 			"resources": {
 				Type:     schema.TypeList,
@@ -89,6 +108,14 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 		})
 	}
 	_ = d.Set("resources", resources)
+
+	users, organizations, repositories := enterpriseCostCenterSplitResources(cc.Resources)
+	sort.Strings(users)
+	sort.Strings(organizations)
+	sort.Strings(repositories)
+	_ = d.Set("users", stringSliceToAnySlice(users))
+	_ = d.Set("organizations", stringSliceToAnySlice(organizations))
+	_ = d.Set("repositories", stringSliceToAnySlice(repositories))
 
 	return nil
 }
