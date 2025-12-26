@@ -31,4 +31,7 @@ data "github_enterprise_cost_center" "example" {
 * `resources` - A list of assigned resources.
   * `type` - The resource type.
   * `name` - The resource identifier (username, organization login, or repository full name).
+* `users` - The usernames currently assigned to the cost center.
+* `organizations` - The organization logins currently assigned to the cost center.
+* `repositories` - The repositories currently assigned to the cost center.
 
