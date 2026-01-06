@@ -12,13 +12,6 @@ import (
 func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	if isEnterprise != "true" {
-		t.Skip("Skipping because `ENTERPRISE_ACCOUNT` is not set or set to false")
-	}
-	if testEnterprise == "" {
-		t.Skip("Skipping because `ENTERPRISE_SLUG` is not set")
-	}
-
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
 			slug = "%s"
@@ -38,11 +31,11 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 			enterprise_slug = data.github_enterprise.enterprise.slug
 			team_id         = github_enterprise_team.test.team_id
 		}
-	`, testEnterprise, randomID)
+	`, testAccConf.enterpriseSlug, randomID)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
-		Providers: testAccProviders,
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
@@ -62,16 +55,6 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 
 func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
-
-	if isEnterprise != "true" {
-		t.Skip("Skipping because `ENTERPRISE_ACCOUNT` is not set or set to false")
-	}
-	if testEnterprise == "" {
-		t.Skip("Skipping because `ENTERPRISE_SLUG` is not set")
-	}
-	if testOrganization == "" {
-		t.Skip("Skipping because `GITHUB_OWNER`/`GITHUB_ORGANIZATION` is not set")
-	}
 
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -95,18 +78,18 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 			enterprise_team = github_enterprise_team.test.slug
 			depends_on      = [github_enterprise_team_organizations.assign]
 		}
-	`, testEnterprise, randomID, testOrganization)
+	`, testAccConf.enterpriseSlug, randomID, testAccConf.owner)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
-		Providers: testAccProviders,
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.github_enterprise_team_organizations.test", "id"),
 					resource.TestCheckResourceAttr("data.github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
-					resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", testOrganization),
+					resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
 				),
 			},
 		},
@@ -117,12 +100,6 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 	username := os.Getenv("GITHUB_TEST_USER")
 
-	if isEnterprise != "true" {
-		t.Skip("Skipping because `ENTERPRISE_ACCOUNT` is not set or set to false")
-	}
-	if testEnterprise == "" {
-		t.Skip("Skipping because `ENTERPRISE_SLUG` is not set")
-	}
 	if username == "" {
 		t.Skip("Skipping because `GITHUB_TEST_USER` is not set")
 	}
@@ -149,11 +126,11 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 			username        = "%s"
 			depends_on      = [github_enterprise_team_membership.test]
 		}
-	`, testEnterprise, randomID, username, username)
+	`, testAccConf.enterpriseSlug, randomID, username, username)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
-		Providers: testAccProviders,
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,

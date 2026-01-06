@@ -14,12 +14,6 @@ import (
 func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	if isEnterprise != "true" {
-		t.Skip("Skipping because `ENTERPRISE_ACCOUNT` is not set or set to false")
-	}
-	if testEnterprise == "" {
-		t.Skip("Skipping because `ENTERPRISE_SLUG` is not set")
-	}
 	testEnterpriseCostCenterOrganization := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
 	testEnterpriseCostCenterRepository := os.Getenv("ENTERPRISE_TEST_REPOSITORY")
 	testEnterpriseCostCenterUsers := os.Getenv("ENTERPRISE_TEST_USERS")
@@ -55,7 +49,7 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 			organizations = [%q]
 			repositories  = [%q]
 		}
-	`, testEnterprise, randomID, usersBefore, testEnterpriseCostCenterOrganization, testEnterpriseCostCenterRepository)
+	`, testAccConf.enterpriseSlug, randomID, usersBefore, testEnterpriseCostCenterOrganization, testEnterpriseCostCenterRepository)
 
 	configAfter := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -70,7 +64,7 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 			organizations = []
 			repositories  = []
 		}
-	`, testEnterprise, randomID, usersAfter)
+	`, testAccConf.enterpriseSlug, randomID, usersAfter)
 
 	configEmpty := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -85,10 +79,10 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 			organizations = []
 			repositories  = []
 		}
-	`, testEnterprise, randomID)
+	`, testAccConf.enterpriseSlug, randomID)
 
 	checkBefore := resource.ComposeTestCheckFunc(
-		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "enterprise_slug", testEnterprise),
+		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "enterprise_slug", testAccConf.enterpriseSlug),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "name", fmt.Sprintf("tf-acc-test-%s", randomID)),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "state", "active"),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "organizations.#", "1"),
@@ -116,8 +110,8 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 	)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
-		Providers: testAccProviders,
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: configBefore,
@@ -140,7 +134,7 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 					if !ok {
 						return "", fmt.Errorf("resource not found in state")
 					}
-					return fmt.Sprintf("%s/%s", testEnterprise, rs.Primary.ID), nil
+					return fmt.Sprintf("%s/%s", testAccConf.enterpriseSlug, rs.Primary.ID), nil
 				},
 			},
 		},

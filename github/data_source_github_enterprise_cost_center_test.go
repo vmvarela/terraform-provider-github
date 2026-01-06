@@ -12,12 +12,6 @@ import (
 func TestAccGithubEnterpriseCostCenterDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	if isEnterprise != "true" {
-		t.Skip("Skipping because `ENTERPRISE_ACCOUNT` is not set or set to false")
-	}
-	if testEnterprise == "" {
-		t.Skip("Skipping because `ENTERPRISE_SLUG` is not set")
-	}
 	testEnterpriseCostCenterOrganization := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
 	testEnterpriseCostCenterRepository := os.Getenv("ENTERPRISE_TEST_REPOSITORY")
 	testEnterpriseCostCenterUsers := os.Getenv("ENTERPRISE_TEST_USERS")
@@ -57,7 +51,7 @@ func TestAccGithubEnterpriseCostCenterDataSource(t *testing.T) {
 			enterprise_slug = data.github_enterprise.enterprise.slug
 			cost_center_id  = github_enterprise_cost_center.test.id
 		}
-	`, testEnterprise, randomID, userList, testEnterpriseCostCenterOrganization, testEnterpriseCostCenterRepository)
+	`, testAccConf.enterpriseSlug, randomID, userList, testEnterpriseCostCenterOrganization, testEnterpriseCostCenterRepository)
 
 	check := resource.ComposeTestCheckFunc(
 		resource.TestCheckResourceAttrPair("data.github_enterprise_cost_center.test", "cost_center_id", "github_enterprise_cost_center.test", "id"),
@@ -72,8 +66,8 @@ func TestAccGithubEnterpriseCostCenterDataSource(t *testing.T) {
 	)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
-		Providers: testAccProviders,
-		Steps:     []resource.TestStep{{Config: config, Check: check}},
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
+		Steps:             []resource.TestStep{{Config: config, Check: check}},
 	})
 }
