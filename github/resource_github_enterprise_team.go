@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	githubv3 "github.com/google/go-github/v67/github"
+	"github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -88,17 +88,17 @@ func resourceGithubEnterpriseTeamCreate(ctx context.Context, d *schema.ResourceD
 	orgSelection := d.Get("organization_selection_type").(string)
 	groupID := d.Get("group_id").(string)
 
-	req := enterpriseTeamCreateRequest{
+	req := github.EnterpriseTeamCreateOrUpdateRequest{
 		Name:                      name,
-		Description:               githubv3.String(description),
-		OrganizationSelectionType: githubv3.String(orgSelection),
+		Description:               github.Ptr(description),
+		OrganizationSelectionType: github.Ptr(orgSelection),
 	}
 	if groupID != "" {
-		req.GroupID = githubv3.String(groupID)
+		req.GroupID = github.Ptr(groupID)
 	}
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
-	te, _, err := createEnterpriseTeam(ctx, client, enterpriseSlug, req)
+	te, _, err := client.Enterprise.CreateTeam(ctx, enterpriseSlug, req)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -120,14 +120,14 @@ func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceDat
 
 	// Try to fetch by slug first (faster), but if the team was renamed we need
 	// to fall back to listing all teams and matching by numeric ID.
-	var te *enterpriseTeam
+	var te *github.EnterpriseTeam
 	if slug, ok := d.GetOk("slug"); ok {
 		if s := strings.TrimSpace(slug.(string)); s != "" {
-			candidate, _, getErr := getEnterpriseTeamBySlug(ctx, client, enterpriseSlug, s)
+			candidate, _, getErr := client.Enterprise.GetTeam(ctx, enterpriseSlug, s)
 			if getErr == nil {
 				te = candidate
 			} else {
-				ghErr := &githubv3.ErrorResponse{}
+				ghErr := &github.ErrorResponse{}
 				if errors.As(getErr, &ghErr) && ghErr.Response.StatusCode != http.StatusNotFound {
 					return diag.FromErr(getErr)
 				}
@@ -168,15 +168,18 @@ func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceDat
 	if err = d.Set("team_id", int(te.ID)); err != nil {
 		return diag.FromErr(err)
 	}
-	orgSelection := te.OrganizationSelectionType
+	orgSelection := ""
+	if te.OrganizationSelectionType != nil {
+		orgSelection = *te.OrganizationSelectionType
+	}
 	if orgSelection == "" {
 		orgSelection = "disabled"
 	}
 	if err = d.Set("organization_selection_type", orgSelection); err != nil {
 		return diag.FromErr(err)
 	}
-	if te.GroupID != nil {
-		if err = d.Set("group_id", *te.GroupID); err != nil {
+	if te.GroupID != "" {
+		if err = d.Set("group_id", te.GroupID); err != nil {
 			return diag.FromErr(err)
 		}
 	} else {
@@ -215,17 +218,17 @@ func resourceGithubEnterpriseTeamUpdate(ctx context.Context, d *schema.ResourceD
 	orgSelection := d.Get("organization_selection_type").(string)
 	groupID := d.Get("group_id").(string)
 
-	req := enterpriseTeamUpdateRequest{
-		Name:                      githubv3.String(name),
-		Description:               githubv3.String(description),
-		OrganizationSelectionType: githubv3.String(orgSelection),
+	req := github.EnterpriseTeamCreateOrUpdateRequest{
+		Name:                      name,
+		Description:               github.Ptr(description),
+		OrganizationSelectionType: github.Ptr(orgSelection),
 	}
 	if groupID != "" {
-		req.GroupID = githubv3.String(groupID)
+		req.GroupID = github.Ptr(groupID)
 	}
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
-	_, _, err := updateEnterpriseTeam(ctx, client, enterpriseSlug, teamSlug, req)
+	_, _, err := client.Enterprise.UpdateTeam(ctx, enterpriseSlug, teamSlug, req)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -255,10 +258,10 @@ func resourceGithubEnterpriseTeamDelete(ctx context.Context, d *schema.ResourceD
 	}
 
 	log.Printf("[INFO] Deleting enterprise team: %s/%s (%s)", enterpriseSlug, teamSlug, d.Id())
-	resp, err := deleteEnterpriseTeam(ctx, client, enterpriseSlug, teamSlug)
+	resp, err := client.Enterprise.DeleteTeam(ctx, enterpriseSlug, teamSlug)
 	if err != nil {
 		// Already gone? That's fine, we wanted it deleted anyway.
-		ghErr := &githubv3.ErrorResponse{}
+		ghErr := &github.ErrorResponse{}
 		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
 			return nil
 		}

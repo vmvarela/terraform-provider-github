@@ -11,7 +11,7 @@ import (
 
 func dataSourceGithubEnterpriseTeamMembership() *schema.Resource {
 	return &schema.Resource{
-		Description: "Manages membership in a GitHub enterprise team.",
+		Description: "Gets information about a user's membership in a GitHub enterprise team.",
 		ReadContext: dataSourceGithubEnterpriseTeamMembershipRead,
 
 		Schema: map[string]*schema.Schema{
@@ -30,23 +30,13 @@ func dataSourceGithubEnterpriseTeamMembership() *schema.Resource {
 			"username": {
 				Type:             schema.TypeString,
 				Required:         true,
-				Description:      "The GitHub username.",
+				Description:      "The username of the user.",
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
-			"role": {
-				Type:        schema.TypeString,
+			"user_id": {
+				Type:        schema.TypeInt,
 				Computed:    true,
-				Description: "The role of the user in the enterprise team, if returned by the API.",
-			},
-			"state": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The membership state, if returned by the API.",
-			},
-			"etag": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "ETag of the membership response.",
+				Description: "The ID of the user.",
 			},
 		},
 	}
@@ -57,12 +47,14 @@ func dataSourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema
 	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
 	enterpriseTeam := strings.TrimSpace(d.Get("enterprise_team").(string))
 	username := strings.TrimSpace(d.Get("username").(string))
-	m, resp, err := getEnterpriseTeamMembershipDetails(ctx, client, enterpriseSlug, enterpriseTeam, username)
+
+	// Get the membership using the SDK
+	user, _, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, enterpriseTeam, username)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	d.SetId(buildSlashThreePartID(enterpriseSlug, enterpriseTeam, username))
+	d.SetId(buildThreePartID(enterpriseSlug, enterpriseTeam, username))
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return diag.FromErr(err)
 	}
@@ -72,18 +64,11 @@ func dataSourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema
 	if err := d.Set("username", username); err != nil {
 		return diag.FromErr(err)
 	}
-	if m != nil {
-		if err := d.Set("role", m.Role); err != nil {
-			return diag.FromErr(err)
-		}
-		if err := d.Set("state", m.State); err != nil {
+	if user != nil && user.ID != nil {
+		if err := d.Set("user_id", int(*user.ID)); err != nil {
 			return diag.FromErr(err)
 		}
 	}
-	if resp != nil {
-		if err := d.Set("etag", resp.Header.Get("ETag")); err != nil {
-			return diag.FromErr(err)
-		}
-	}
+
 	return nil
 }
