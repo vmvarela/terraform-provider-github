@@ -2,13 +2,8 @@ package github
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"log"
-	"net/http"
 	"strings"
 
-	githubv3 "github.com/google/go-github/v67/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -17,11 +12,13 @@ import (
 func resourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 	return &schema.Resource{
 		Description:   "Manages organization assignments for a GitHub enterprise team.",
-		CreateContext: resourceGithubEnterpriseTeamOrganizationsCreateOrUpdate,
+		CreateContext: resourceGithubEnterpriseTeamOrganizationsCreate,
 		ReadContext:   resourceGithubEnterpriseTeamOrganizationsRead,
-		UpdateContext: resourceGithubEnterpriseTeamOrganizationsCreateOrUpdate,
+		UpdateContext: resourceGithubEnterpriseTeamOrganizationsUpdate,
 		DeleteContext: resourceGithubEnterpriseTeamOrganizationsDelete,
-		Importer:      &schema.ResourceImporter{StateContext: resourceGithubEnterpriseTeamOrganizationsImport},
+		Importer: &schema.ResourceImporter{
+			StateContext: schema.ImportStatePassthroughContext,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"enterprise_slug": {
@@ -40,149 +37,143 @@ func resourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 			},
 			"organization_slugs": {
 				Type:        schema.TypeSet,
-				Optional:    true,
+				Required:    true,
 				Description: "Set of organization slugs that the enterprise team should be assigned to.",
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Set:         schema.HashString,
+				MinItems:    1,
 			},
 		},
 	}
 }
 
-func resourceGithubEnterpriseTeamOrganizationsCreateOrUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
-	enterpriseSlug := d.Get("enterprise_slug").(string)
-	enterpriseTeam := d.Get("enterprise_team").(string)
+	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
+	enterpriseTeam := strings.TrimSpace(d.Get("enterprise_team").(string))
 
-	desiredSet := map[string]struct{}{}
-	if v, ok := d.GetOk("organization_slugs"); ok {
-		for _, s := range v.(*schema.Set).List() {
-			slug := strings.TrimSpace(s.(string))
-			if slug != "" {
-				desiredSet[slug] = struct{}{}
-			}
-		}
-	}
-
-	ctx = context.WithValue(ctx, ctxId, d.Id())
-	current, err := listEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, enterpriseTeam)
+	// Find the team by slug or ID to get the team ID
+	team, err := findEnterpriseTeamBySlugOrID(ctx, client, enterpriseSlug, enterpriseTeam)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	currentSet := map[string]struct{}{}
-	for _, org := range current {
-		if org.Login != "" {
-			currentSet[org.Login] = struct{}{}
-		}
+	orgSlugsSet := d.Get("organization_slugs").(*schema.Set)
+	orgSlugs := make([]string, 0, orgSlugsSet.Len())
+	for _, v := range orgSlugsSet.List() {
+		orgSlugs = append(orgSlugs, v.(string))
 	}
 
-	toAdd := []string{}
-	for slug := range desiredSet {
-		if _, ok := currentSet[slug]; !ok {
-			toAdd = append(toAdd, slug)
-		}
-	}
-
-	toRemove := []string{}
-	for slug := range currentSet {
-		if _, ok := desiredSet[slug]; !ok {
-			toRemove = append(toRemove, slug)
-		}
-	}
-
-	// Perform adds before removes to avoid transient states where the team has no orgs
-	if err := addEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, enterpriseTeam, toAdd); err != nil {
-		return diag.FromErr(err)
-	}
-	if _, err := removeEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, enterpriseTeam, toRemove); err != nil {
+	// Add organizations to the team using the SDK
+	_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, team.Slug, orgSlugs)
+	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	// NOTE: enterprise team slugs have the "ent:" prefix, so we must not use
-	// colon-delimited IDs here.
-	d.SetId(buildSlashTwoPartID(enterpriseSlug, enterpriseTeam))
-	return resourceGithubEnterpriseTeamOrganizationsRead(context.WithValue(ctx, ctxId, d.Id()), d, meta)
+	d.SetId(buildTwoPartID(enterpriseSlug, team.Slug))
+	return resourceGithubEnterpriseTeamOrganizationsRead(ctx, d, meta)
 }
 
 func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
-	enterpriseSlug, enterpriseTeam, err := parseSlashTwoPartID(d.Id(), "enterprise_slug", "enterprise_team")
+	enterpriseSlug, teamSlug, err := parseTwoPartID(d.Id(), "enterprise_slug", "enterprise_team")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	if err = d.Set("enterprise_slug", enterpriseSlug); err != nil {
-		return diag.FromErr(err)
-	}
-	if err = d.Set("enterprise_team", enterpriseTeam); err != nil {
-		return diag.FromErr(err)
-	}
-
-	ctx = context.WithValue(ctx, ctxId, d.Id())
-	orgs, err := listEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, enterpriseTeam)
+	orgs, err := listAllEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, teamSlug)
 	if err != nil {
-		ghErr := &githubv3.ErrorResponse{}
-		if errors.As(err, &ghErr) {
-			if ghErr.Response.StatusCode == http.StatusNotFound {
-				log.Printf("[INFO] Removing enterprise team organizations %s from state because it no longer exists in GitHub", d.Id())
-				d.SetId("")
-				return nil
-			}
-		}
 		return diag.FromErr(err)
 	}
 
-	slugs := []string{}
+	slugs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		if org.Login != "" {
-			slugs = append(slugs, org.Login)
+		if org.Login != nil && *org.Login != "" {
+			slugs = append(slugs, *org.Login)
 		}
 	}
-	if err = d.Set("organization_slugs", slugs); err != nil {
+
+	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("enterprise_team", teamSlug); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("organization_slugs", slugs); err != nil {
 		return diag.FromErr(err)
 	}
 
 	return nil
+}
+
+func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+	client := meta.(*Owner).v3client
+	enterpriseSlug, teamSlug, err := parseTwoPartID(d.Id(), "enterprise_slug", "enterprise_team")
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	if d.HasChange("organization_slugs") {
+		oldVal, newVal := d.GetChange("organization_slugs")
+		oldSet := oldVal.(*schema.Set)
+		newSet := newVal.(*schema.Set)
+
+		toAdd := newSet.Difference(oldSet)
+		toRemove := oldSet.Difference(newSet)
+
+		// Add new organizations
+		if toAdd.Len() > 0 {
+			addSlugs := make([]string, 0, toAdd.Len())
+			for _, v := range toAdd.List() {
+				addSlugs = append(addSlugs, v.(string))
+			}
+			_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, teamSlug, addSlugs)
+			if err != nil {
+				return diag.FromErr(err)
+			}
+		}
+
+		// Remove old organizations
+		if toRemove.Len() > 0 {
+			removeSlugs := make([]string, 0, toRemove.Len())
+			for _, v := range toRemove.List() {
+				removeSlugs = append(removeSlugs, v.(string))
+			}
+			_, _, err = client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
+			if err != nil {
+				return diag.FromErr(err)
+			}
+		}
+	}
+
+	return resourceGithubEnterpriseTeamOrganizationsRead(ctx, d, meta)
 }
 
 func resourceGithubEnterpriseTeamOrganizationsDelete(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
-	enterpriseSlug := d.Get("enterprise_slug").(string)
-	enterpriseTeam := d.Get("enterprise_team").(string)
-
-	ctx = context.WithValue(ctx, ctxId, d.Id())
-	orgs, err := listEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, enterpriseTeam)
-	if err != nil {
-		ghErr := &githubv3.ErrorResponse{}
-		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
-			return nil
-		}
-		return diag.FromErr(err)
-	}
-
-	toRemove := []string{}
-	for _, org := range orgs {
-		if org.Login != "" {
-			toRemove = append(toRemove, org.Login)
-		}
-	}
-
-	log.Printf("[INFO] Removing all organization assignments for enterprise team: %s/%s", enterpriseSlug, enterpriseTeam)
-	_, err = removeEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, enterpriseTeam, toRemove)
+	enterpriseSlug, teamSlug, err := parseTwoPartID(d.Id(), "enterprise_slug", "enterprise_team")
 	if err != nil {
 		return diag.FromErr(err)
 	}
+
+	// Get current organizations
+	orgs, err := listAllEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, teamSlug)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	if len(orgs) > 0 {
+		removeSlugs := make([]string, 0, len(orgs))
+		for _, org := range orgs {
+			if org.Login != nil && *org.Login != "" {
+				removeSlugs = append(removeSlugs, *org.Login)
+			}
+		}
+		_, _, err = client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
+		if err != nil {
+			return diag.FromErr(err)
+		}
+	}
+
 	return nil
-}
-
-func resourceGithubEnterpriseTeamOrganizationsImport(_ context.Context, d *schema.ResourceData, meta any) ([]*schema.ResourceData, error) {
-	enterpriseSlug, enterpriseTeam, err := parseSlashTwoPartID(d.Id(), "enterprise_slug", "enterprise_team")
-	if err != nil {
-		return nil, fmt.Errorf("invalid import specified: supplied import must be written as <enterprise_slug>/<enterprise_team>")
-	}
-	d.SetId(buildSlashTwoPartID(enterpriseSlug, enterpriseTeam))
-	_ = d.Set("enterprise_slug", enterpriseSlug)
-	_ = d.Set("enterprise_team", enterpriseTeam)
-	return []*schema.ResourceData{d}, nil
 }

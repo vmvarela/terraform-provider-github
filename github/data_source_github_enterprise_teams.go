@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -67,7 +68,7 @@ func dataSourceGithubEnterpriseTeams() *schema.Resource {
 func dataSourceGithubEnterpriseTeamsRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
-	teams, err := listEnterpriseTeams(ctx, client, enterpriseSlug)
+	teams, err := listAllEnterpriseTeams(ctx, client, enterpriseSlug)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -84,13 +85,16 @@ func dataSourceGithubEnterpriseTeamsRead(ctx context.Context, d *schema.Resource
 		} else {
 			m["description"] = ""
 		}
-		orgSel := t.OrganizationSelectionType
+		orgSel := ""
+		if t.OrganizationSelectionType != nil {
+			orgSel = *t.OrganizationSelectionType
+		}
 		if orgSel == "" {
 			orgSel = "disabled"
 		}
 		m["organization_selection_type"] = orgSel
-		if t.GroupID != nil {
-			m["group_id"] = *t.GroupID
+		if t.GroupID != "" {
+			m["group_id"] = t.GroupID
 		} else {
 			m["group_id"] = ""
 		}
@@ -105,4 +109,24 @@ func dataSourceGithubEnterpriseTeamsRead(ctx context.Context, d *schema.Resource
 		return diag.FromErr(err)
 	}
 	return nil
+}
+
+// listAllEnterpriseTeams returns all enterprise teams with pagination handled.
+func listAllEnterpriseTeams(ctx context.Context, client *github.Client, enterpriseSlug string) ([]*github.EnterpriseTeam, error) {
+	var all []*github.EnterpriseTeam
+	opt := &github.ListOptions{PerPage: maxPerPage}
+
+	for {
+		teams, resp, err := client.Enterprise.ListTeams(ctx, enterpriseSlug, opt)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, teams...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+
+	return all, nil
 }
