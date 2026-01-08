@@ -2,145 +2,32 @@ package github
 
 import (
 	"context"
-	"fmt"
-	"net/url"
-	"strconv"
 
-	gh "github.com/google/go-github/v67/github"
+	gh "github.com/google/go-github/v81/github"
 )
 
-const enterpriseSCIMAcceptHeader = "application/scim+json"
-
-type enterpriseSCIMListOptions struct {
-	Filter             string
-	ExcludedAttributes string
-	StartIndex         int
-	Count              int
-}
-
-type enterpriseSCIMListResponse[T any] struct {
-	Schemas      []string `json:"schemas,omitempty"`
-	TotalResults int      `json:"totalResults,omitempty"`
-	StartIndex   int      `json:"startIndex,omitempty"`
-	ItemsPerPage int      `json:"itemsPerPage,omitempty"`
-	Resources    []T      `json:"Resources,omitempty"`
-}
-
-type enterpriseSCIMMeta struct {
-	ResourceType  string `json:"resourceType,omitempty"`
-	Created       string `json:"created,omitempty"`
-	LastModified  string `json:"lastModified,omitempty"`
-	Location      string `json:"location,omitempty"`
-	Version       string `json:"version,omitempty"`
-	ETag          string `json:"eTag,omitempty"`
-	PasswordChgAt string `json:"passwordChangedAt,omitempty"`
-}
-
-type enterpriseSCIMGroupMember struct {
-	Value   string `json:"value,omitempty"`
-	Ref     string `json:"$ref,omitempty"`
-	Display string `json:"display,omitempty"`
-}
-
-type enterpriseSCIMGroup struct {
-	Schemas     []string                    `json:"schemas,omitempty"`
-	ID          string                      `json:"id,omitempty"`
-	ExternalID  string                      `json:"externalId,omitempty"`
-	DisplayName string                      `json:"displayName,omitempty"`
-	Members     []enterpriseSCIMGroupMember `json:"members,omitempty"`
-	Meta        *enterpriseSCIMMeta         `json:"meta,omitempty"`
-}
-
-type enterpriseSCIMUserName struct {
-	Formatted  string `json:"formatted,omitempty"`
-	FamilyName string `json:"familyName,omitempty"`
-	GivenName  string `json:"givenName,omitempty"`
-	MiddleName string `json:"middleName,omitempty"`
-}
-
-type enterpriseSCIMUserEmail struct {
-	Value   string `json:"value,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Primary bool   `json:"primary,omitempty"`
-}
-
-type enterpriseSCIMUserRole struct {
-	Value   string `json:"value,omitempty"`
-	Display string `json:"display,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Primary bool   `json:"primary,omitempty"`
-}
-
-type enterpriseSCIMUser struct {
-	Schemas     []string                  `json:"schemas,omitempty"`
-	ID          string                    `json:"id,omitempty"`
-	ExternalID  string                    `json:"externalId,omitempty"`
-	UserName    string                    `json:"userName,omitempty"`
-	DisplayName string                    `json:"displayName,omitempty"`
-	Active      bool                      `json:"active,omitempty"`
-	Name        *enterpriseSCIMUserName   `json:"name,omitempty"`
-	Emails      []enterpriseSCIMUserEmail `json:"emails,omitempty"`
-	Roles       []enterpriseSCIMUserRole  `json:"roles,omitempty"`
-	Meta        *enterpriseSCIMMeta       `json:"meta,omitempty"`
-}
-
-func enterpriseSCIMListURL(path string, opts enterpriseSCIMListOptions) (string, error) {
-	u, err := url.Parse(path)
-	if err != nil {
-		return "", err
-	}
-	q := u.Query()
-	if opts.Filter != "" {
-		q.Set("filter", opts.Filter)
-	}
-	if opts.ExcludedAttributes != "" {
-		q.Set("excludedAttributes", opts.ExcludedAttributes)
-	}
-	if opts.StartIndex > 0 {
-		q.Set("startIndex", strconv.Itoa(opts.StartIndex))
-	}
-	if opts.Count > 0 {
-		q.Set("count", strconv.Itoa(opts.Count))
-	}
-	u.RawQuery = q.Encode()
-	return u.String(), nil
-}
-
-func enterpriseSCIMGet[T any](ctx context.Context, client *gh.Client, urlStr string, out *T) (*gh.Response, error) {
-	req, err := client.NewRequest("GET", urlStr, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", enterpriseSCIMAcceptHeader)
-	return client.Do(ctx, req, out)
-}
-
-func enterpriseSCIMListAllGroups(ctx context.Context, client *gh.Client, enterprise, filter, excludedAttributes string, count int) ([]enterpriseSCIMGroup, *enterpriseSCIMListResponse[enterpriseSCIMGroup], error) {
+// enterpriseSCIMListAllGroups fetches all SCIM groups for an enterprise with automatic pagination.
+func enterpriseSCIMListAllGroups(ctx context.Context, client *gh.Client, enterprise, filter string, count int) ([]*gh.SCIMEnterpriseGroupAttributes, *gh.SCIMEnterpriseGroups, error) {
 	startIndex := 1
-	all := make([]enterpriseSCIMGroup, 0)
-	var firstResp *enterpriseSCIMListResponse[enterpriseSCIMGroup]
+	all := make([]*gh.SCIMEnterpriseGroupAttributes, 0)
+	var firstResp *gh.SCIMEnterpriseGroups
 
 	for {
-		path := fmt.Sprintf("scim/v2/enterprises/%s/Groups", enterprise)
-		urlStr, err := enterpriseSCIMListURL(path, enterpriseSCIMListOptions{
-			Filter:             filter,
-			ExcludedAttributes: excludedAttributes,
-			StartIndex:         startIndex,
-			Count:              count,
-		})
-		if err != nil {
-			return nil, nil, err
+		opts := &gh.ListProvisionedSCIMGroupsEnterpriseOptions{
+			StartIndex: gh.Ptr(startIndex),
+			Count:      gh.Ptr(count),
+		}
+		if filter != "" {
+			opts.Filter = gh.Ptr(filter)
 		}
 
-		page := enterpriseSCIMListResponse[enterpriseSCIMGroup]{}
-		_, err = enterpriseSCIMGet(ctx, client, urlStr, &page)
+		page, _, err := client.Enterprise.ListProvisionedSCIMGroups(ctx, enterprise, opts)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		if firstResp == nil {
-			snap := page
-			firstResp = &snap
+			firstResp = page
 		}
 
 		all = append(all, page.Resources...)
@@ -148,7 +35,7 @@ func enterpriseSCIMListAllGroups(ctx context.Context, client *gh.Client, enterpr
 		if len(page.Resources) == 0 {
 			break
 		}
-		if page.TotalResults > 0 && len(all) >= page.TotalResults {
+		if page.TotalResults != nil && len(all) >= *page.TotalResults {
 			break
 		}
 
@@ -156,44 +43,39 @@ func enterpriseSCIMListAllGroups(ctx context.Context, client *gh.Client, enterpr
 	}
 
 	if firstResp == nil {
-		firstResp = &enterpriseSCIMListResponse[enterpriseSCIMGroup]{
-			Schemas:      []string{"urn:ietf:params:scim:api:messages:2.0:ListResponse"},
-			TotalResults: len(all),
-			StartIndex:   1,
-			ItemsPerPage: count,
-			Resources:    nil,
+		firstResp = &gh.SCIMEnterpriseGroups{
+			Schemas:      []string{gh.SCIMSchemasURINamespacesListResponse},
+			TotalResults: gh.Ptr(len(all)),
+			StartIndex:   gh.Ptr(1),
+			ItemsPerPage: gh.Ptr(count),
 		}
 	}
 
 	return all, firstResp, nil
 }
 
-func enterpriseSCIMListAllUsers(ctx context.Context, client *gh.Client, enterprise, filter, excludedAttributes string, count int) ([]enterpriseSCIMUser, *enterpriseSCIMListResponse[enterpriseSCIMUser], error) {
+// enterpriseSCIMListAllUsers fetches all SCIM users for an enterprise with automatic pagination.
+func enterpriseSCIMListAllUsers(ctx context.Context, client *gh.Client, enterprise, filter string, count int) ([]*gh.SCIMEnterpriseUserAttributes, *gh.SCIMEnterpriseUsers, error) {
 	startIndex := 1
-	all := make([]enterpriseSCIMUser, 0)
-	var firstResp *enterpriseSCIMListResponse[enterpriseSCIMUser]
+	all := make([]*gh.SCIMEnterpriseUserAttributes, 0)
+	var firstResp *gh.SCIMEnterpriseUsers
 
 	for {
-		path := fmt.Sprintf("scim/v2/enterprises/%s/Users", enterprise)
-		urlStr, err := enterpriseSCIMListURL(path, enterpriseSCIMListOptions{
-			Filter:             filter,
-			ExcludedAttributes: excludedAttributes,
-			StartIndex:         startIndex,
-			Count:              count,
-		})
-		if err != nil {
-			return nil, nil, err
+		opts := &gh.ListProvisionedSCIMUsersEnterpriseOptions{
+			StartIndex: gh.Ptr(startIndex),
+			Count:      gh.Ptr(count),
+		}
+		if filter != "" {
+			opts.Filter = gh.Ptr(filter)
 		}
 
-		page := enterpriseSCIMListResponse[enterpriseSCIMUser]{}
-		_, err = enterpriseSCIMGet(ctx, client, urlStr, &page)
+		page, _, err := client.Enterprise.ListProvisionedSCIMUsers(ctx, enterprise, opts)
 		if err != nil {
 			return nil, nil, err
 		}
 
 		if firstResp == nil {
-			snap := page
-			firstResp = &snap
+			firstResp = page
 		}
 
 		all = append(all, page.Resources...)
@@ -201,7 +83,7 @@ func enterpriseSCIMListAllUsers(ctx context.Context, client *gh.Client, enterpri
 		if len(page.Resources) == 0 {
 			break
 		}
-		if page.TotalResults > 0 && len(all) >= page.TotalResults {
+		if page.TotalResults != nil && len(all) >= *page.TotalResults {
 			break
 		}
 
@@ -209,69 +91,89 @@ func enterpriseSCIMListAllUsers(ctx context.Context, client *gh.Client, enterpri
 	}
 
 	if firstResp == nil {
-		firstResp = &enterpriseSCIMListResponse[enterpriseSCIMUser]{
-			Schemas:      []string{"urn:ietf:params:scim:api:messages:2.0:ListResponse"},
-			TotalResults: len(all),
-			StartIndex:   1,
-			ItemsPerPage: count,
-			Resources:    nil,
+		firstResp = &gh.SCIMEnterpriseUsers{
+			Schemas:      []string{gh.SCIMSchemasURINamespacesListResponse},
+			TotalResults: gh.Ptr(len(all)),
+			StartIndex:   gh.Ptr(1),
+			ItemsPerPage: gh.Ptr(count),
 		}
 	}
 
 	return all, firstResp, nil
 }
 
-func flattenEnterpriseSCIMMeta(meta *enterpriseSCIMMeta) []any {
+func flattenEnterpriseSCIMMeta(meta *gh.SCIMEnterpriseMeta) []any {
 	if meta == nil {
 		return nil
 	}
-	return []any{map[string]any{
-		"resource_type":       meta.ResourceType,
-		"created":             meta.Created,
-		"last_modified":       meta.LastModified,
-		"location":            meta.Location,
-		"version":             meta.Version,
-		"etag":                meta.ETag,
-		"password_changed_at": meta.PasswordChgAt,
-	}}
+	m := map[string]any{
+		"resource_type": meta.ResourceType,
+	}
+	if meta.Created != nil {
+		m["created"] = meta.Created.String()
+	}
+	if meta.LastModified != nil {
+		m["last_modified"] = meta.LastModified.String()
+	}
+	if meta.Location != nil {
+		m["location"] = *meta.Location
+	}
+	return []any{m}
 }
 
-func flattenEnterpriseSCIMGroupMembers(members []enterpriseSCIMGroupMember) []any {
+func flattenEnterpriseSCIMGroupMembers(members []*gh.SCIMEnterpriseDisplayReference) []any {
 	out := make([]any, 0, len(members))
 	for _, m := range members {
-		out = append(out, map[string]any{
-			"value":        m.Value,
-			"ref":          m.Ref,
-			"display_name": m.Display,
-		})
+		item := map[string]any{
+			"value": m.Value,
+		}
+		if m.Ref != nil {
+			item["ref"] = *m.Ref
+		}
+		if m.Display != nil {
+			item["display_name"] = *m.Display
+		}
+		out = append(out, item)
 	}
 	return out
 }
 
-func flattenEnterpriseSCIMGroup(group enterpriseSCIMGroup) map[string]any {
-	return map[string]any{
-		"schemas":      group.Schemas,
-		"id":           group.ID,
-		"external_id":  group.ExternalID,
-		"display_name": group.DisplayName,
-		"members":      flattenEnterpriseSCIMGroupMembers(group.Members),
-		"meta":         flattenEnterpriseSCIMMeta(group.Meta),
+func flattenEnterpriseSCIMGroup(group *gh.SCIMEnterpriseGroupAttributes) map[string]any {
+	m := map[string]any{
+		"schemas": group.Schemas,
+		"members": flattenEnterpriseSCIMGroupMembers(group.Members),
+		"meta":    flattenEnterpriseSCIMMeta(group.Meta),
 	}
+	if group.ID != nil {
+		m["id"] = *group.ID
+	}
+	if group.ExternalID != nil {
+		m["external_id"] = *group.ExternalID
+	}
+	if group.DisplayName != nil {
+		m["display_name"] = *group.DisplayName
+	}
+	return m
 }
 
-func flattenEnterpriseSCIMUserName(name *enterpriseSCIMUserName) []any {
+func flattenEnterpriseSCIMUserName(name *gh.SCIMEnterpriseUserName) []any {
 	if name == nil {
 		return nil
 	}
-	return []any{map[string]any{
-		"formatted":   name.Formatted,
+	m := map[string]any{
 		"family_name": name.FamilyName,
 		"given_name":  name.GivenName,
-		"middle_name": name.MiddleName,
-	}}
+	}
+	if name.Formatted != nil {
+		m["formatted"] = *name.Formatted
+	}
+	if name.MiddleName != nil {
+		m["middle_name"] = *name.MiddleName
+	}
+	return []any{m}
 }
 
-func flattenEnterpriseSCIMUserEmails(emails []enterpriseSCIMUserEmail) []any {
+func flattenEnterpriseSCIMUserEmails(emails []*gh.SCIMEnterpriseUserEmail) []any {
 	out := make([]any, 0, len(emails))
 	for _, e := range emails {
 		out = append(out, map[string]any{
@@ -283,30 +185,40 @@ func flattenEnterpriseSCIMUserEmails(emails []enterpriseSCIMUserEmail) []any {
 	return out
 }
 
-func flattenEnterpriseSCIMUserRoles(roles []enterpriseSCIMUserRole) []any {
+func flattenEnterpriseSCIMUserRoles(roles []*gh.SCIMEnterpriseUserRole) []any {
 	out := make([]any, 0, len(roles))
 	for _, r := range roles {
-		out = append(out, map[string]any{
-			"value":   r.Value,
-			"display": r.Display,
-			"type":    r.Type,
-			"primary": r.Primary,
-		})
+		item := map[string]any{
+			"value": r.Value,
+		}
+		if r.Display != nil {
+			item["display"] = *r.Display
+		}
+		if r.Type != nil {
+			item["type"] = *r.Type
+		}
+		if r.Primary != nil {
+			item["primary"] = *r.Primary
+		}
+		out = append(out, item)
 	}
 	return out
 }
 
-func flattenEnterpriseSCIMUser(user enterpriseSCIMUser) map[string]any {
-	return map[string]any{
+func flattenEnterpriseSCIMUser(user *gh.SCIMEnterpriseUserAttributes) map[string]any {
+	m := map[string]any{
 		"schemas":      user.Schemas,
-		"id":           user.ID,
-		"external_id":  user.ExternalID,
 		"user_name":    user.UserName,
 		"display_name": user.DisplayName,
+		"external_id":  user.ExternalID,
 		"active":       user.Active,
 		"name":         flattenEnterpriseSCIMUserName(user.Name),
 		"emails":       flattenEnterpriseSCIMUserEmails(user.Emails),
 		"roles":        flattenEnterpriseSCIMUserRoles(user.Roles),
 		"meta":         flattenEnterpriseSCIMMeta(user.Meta),
 	}
+	if user.ID != nil {
+		m["id"] = *user.ID
+	}
+	return m
 }

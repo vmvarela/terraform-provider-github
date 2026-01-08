@@ -24,11 +24,6 @@ func dataSourceGithubEnterpriseSCIMUser() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 			},
-			"excluded_attributes": {
-				Description: "Optional SCIM excludedAttributes query parameter.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
 
 			"schemas": {
 				Type:        schema.TypeList,
@@ -94,16 +89,8 @@ func dataSourceGithubEnterpriseSCIMUserRead(ctx context.Context, d *schema.Resou
 
 	enterprise := d.Get("enterprise").(string)
 	scimUserID := d.Get("scim_user_id").(string)
-	excluded := d.Get("excluded_attributes").(string)
 
-	path := fmt.Sprintf("scim/v2/enterprises/%s/Users/%s", enterprise, scimUserID)
-	urlStr, err := enterpriseSCIMListURL(path, enterpriseSCIMListOptions{ExcludedAttributes: excluded})
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	user := enterpriseSCIMUser{}
-	_, err = enterpriseSCIMGet(ctx, client, urlStr, &user)
+	user, _, err := client.Enterprise.GetProvisionedSCIMUser(ctx, enterprise, scimUserID)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -111,7 +98,9 @@ func dataSourceGithubEnterpriseSCIMUserRead(ctx context.Context, d *schema.Resou
 	d.SetId(fmt.Sprintf("%s/%s", enterprise, scimUserID))
 
 	_ = d.Set("schemas", user.Schemas)
-	_ = d.Set("id", user.ID)
+	if user.ID != nil {
+		_ = d.Set("id", *user.ID)
+	}
 	_ = d.Set("external_id", user.ExternalID)
 	_ = d.Set("user_name", user.UserName)
 	_ = d.Set("display_name", user.DisplayName)

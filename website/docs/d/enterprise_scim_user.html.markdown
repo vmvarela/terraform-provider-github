@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "Github: github_enterprise_scim_user"
+page_title: "GitHub: github_enterprise_scim_user"
 description: |-
   Get SCIM provisioning information for a GitHub enterprise user.
 ---

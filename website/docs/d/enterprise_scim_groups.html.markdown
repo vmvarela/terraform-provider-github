@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "Github: github_enterprise_scim_groups"
+page_title: "GitHub: github_enterprise_scim_groups"
 description: |-
   Get SCIM groups provisioned for a GitHub enterprise.
 ---
