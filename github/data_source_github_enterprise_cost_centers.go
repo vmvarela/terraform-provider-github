@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -66,33 +67,44 @@ func dataSourceGithubEnterpriseCostCenters() *schema.Resource {
 func dataSourceGithubEnterpriseCostCentersRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
-	state := ""
+	var state *string
 	if v, ok := d.GetOk("state"); ok {
-		state = v.(string)
+		s := v.(string)
+		state = &s
 	}
 
 	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/cost-centers", enterpriseSlug))
-	centers, err := enterpriseCostCentersList(ctx, client, enterpriseSlug, state)
+	result, _, err := client.Enterprise.ListCostCenters(ctx, enterpriseSlug, &github.ListCostCenterOptions{State: state})
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	items := make([]any, 0, len(centers))
-	for _, cc := range centers {
+	items := make([]any, 0, len(result.CostCenters))
+	for _, cc := range result.CostCenters {
+		if cc == nil {
+			continue
+		}
 		resources := make([]map[string]any, 0)
 		for _, r := range cc.Resources {
+			if r == nil {
+				continue
+			}
 			resources = append(resources, map[string]any{"type": r.Type, "name": r.Name})
 		}
 		items = append(items, map[string]any{
 			"id":                 cc.ID,
 			"name":               cc.Name,
-			"state":              cc.State,
-			"azure_subscription": cc.AzureSubscription,
+			"state":              cc.GetState(),
+			"azure_subscription": cc.GetAzureSubscription(),
 			"resources":          resources,
 		})
 	}
 
-	d.SetId(fmt.Sprintf("%s/%s", enterpriseSlug, state))
+	stateStr := ""
+	if state != nil {
+		stateStr = *state
+	}
+	d.SetId(fmt.Sprintf("%s/%s", enterpriseSlug, stateStr))
 	_ = d.Set("cost_centers", items)
 	return nil
 }

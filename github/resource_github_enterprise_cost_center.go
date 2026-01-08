@@ -95,7 +95,7 @@ func resourceGithubEnterpriseCostCenterCreate(ctx context.Context, d *schema.Res
 	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, name))
 	log.Printf("[INFO] Creating enterprise cost center: %s (%s)", name, enterpriseSlug)
 
-	cc, err := enterpriseCostCenterCreate(ctx, client, enterpriseSlug, name)
+	cc, _, err := client.Enterprise.CreateCostCenter(ctx, enterpriseSlug, github.CostCenterRequest{Name: name})
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -108,7 +108,7 @@ func resourceGithubEnterpriseCostCenterCreate(ctx context.Context, d *schema.Res
 
 	if hasCostCenterAssignmentsConfigured(d) {
 		// Ensure we operate on fresh API state before mutations.
-		current, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, cc.ID)
+		current, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, cc.ID)
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -127,7 +127,7 @@ func resourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Resou
 
 	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 
-	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
+	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		if is404(err) {
 			// If the API starts returning 404 for archived cost centers, we remove it from state.
@@ -139,15 +139,18 @@ func resourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Resou
 
 	_ = d.Set("name", cc.Name)
 
-	state := strings.ToLower(cc.State)
+	state := strings.ToLower(cc.GetState())
 	if state == "" {
 		state = "active"
 	}
 	_ = d.Set("state", state)
-	_ = d.Set("azure_subscription", cc.AzureSubscription)
+	_ = d.Set("azure_subscription", cc.GetAzureSubscription())
 
 	resources := make([]map[string]any, 0)
 	for _, r := range cc.Resources {
+		if r == nil {
+			continue
+		}
 		resources = append(resources, map[string]any{
 			"type": r.Type,
 			"name": r.Name,
@@ -155,7 +158,7 @@ func resourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Resou
 	}
 	_ = d.Set("resources", resources)
 
-	users, organizations, repositories := enterpriseCostCenterSplitResources(cc.Resources)
+	users, organizations, repositories := costCenterSplitResources(cc.Resources)
 	sort.Strings(users)
 	sort.Strings(organizations)
 	sort.Strings(repositories)
@@ -173,23 +176,23 @@ func resourceGithubEnterpriseCostCenterUpdate(ctx context.Context, d *schema.Res
 
 	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 
-	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
+	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if strings.EqualFold(cc.State, "deleted") {
+	if strings.EqualFold(cc.GetState(), "deleted") {
 		return diag.FromErr(fmt.Errorf("cannot update cost center %q because it is archived", costCenterID))
 	}
 
 	if d.HasChange("name") {
 		name := d.Get("name").(string)
 		log.Printf("[INFO] Updating enterprise cost center: %s/%s", enterpriseSlug, costCenterID)
-		_, err := enterpriseCostCenterUpdate(ctx, client, enterpriseSlug, costCenterID, name)
+		_, _, err := client.Enterprise.UpdateCostCenter(ctx, enterpriseSlug, costCenterID, github.CostCenterRequest{Name: name})
 		if err != nil {
 			return diag.FromErr(err)
 		}
 
-		cc, err = enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
+		cc, _, err = client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 		if err != nil {
 			return diag.FromErr(err)
 		}
@@ -212,7 +215,7 @@ func resourceGithubEnterpriseCostCenterDelete(ctx context.Context, d *schema.Res
 	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 	log.Printf("[INFO] Archiving enterprise cost center: %s/%s", enterpriseSlug, costCenterID)
 
-	_, err := enterpriseCostCenterArchive(ctx, client, enterpriseSlug, costCenterID)
+	_, _, err := client.Enterprise.DeleteCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		if is404(err) {
 			return nil
@@ -236,12 +239,12 @@ func resourceGithubEnterpriseCostCenterImport(ctx context.Context, d *schema.Res
 	return []*schema.ResourceData{d}, nil
 }
 
-func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.ResourceData, client *github.Client, enterpriseSlug, costCenterID string, currentResources []enterpriseCostCenterResource) diag.Diagnostics {
+func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.ResourceData, client *github.Client, enterpriseSlug, costCenterID string, currentResources []*github.CostCenterResource) diag.Diagnostics {
 	desiredUsers := expandStringSet(getStringSetOrEmpty(d, "users"))
 	desiredOrgs := expandStringSet(getStringSetOrEmpty(d, "organizations"))
 	desiredRepos := expandStringSet(getStringSetOrEmpty(d, "repositories"))
 
-	currentUsers, currentOrgs, currentRepos := enterpriseCostCenterSplitResources(currentResources)
+	currentUsers, currentOrgs, currentRepos := costCenterSplitResources(currentResources)
 
 	toAddUsers, toRemoveUsers := diffStringSlices(currentUsers, desiredUsers)
 	toAddOrgs, toRemoveOrgs := diffStringSlices(currentOrgs, desiredOrgs)
@@ -250,10 +253,10 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 	const maxResourcesPerRequest = 50
 	const costCenterResourcesRetryTimeout = 5 * time.Minute
 
-	retryRemove := func(req enterpriseCostCenterResourcesRequest) diag.Diagnostics {
+	retryRemove := func(req github.CostCenterResourceRequest) diag.Diagnostics {
 		//nolint:staticcheck
 		err := resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
-			_, err := enterpriseCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, req)
+			_, _, err := client.Enterprise.RemoveResourcesFromCostCenter(ctx, enterpriseSlug, costCenterID, req)
 			if err == nil {
 				return nil
 			}
@@ -270,10 +273,10 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 		return nil
 	}
 
-	retryAssign := func(req enterpriseCostCenterResourcesRequest) diag.Diagnostics {
+	retryAssign := func(req github.CostCenterResourceRequest) diag.Diagnostics {
 		//nolint:staticcheck
 		err := resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
-			_, err := enterpriseCostCenterAssignResources(ctx, client, enterpriseSlug, costCenterID, req)
+			_, _, err := client.Enterprise.AddResourcesToCostCenter(ctx, enterpriseSlug, costCenterID, req)
 			if err == nil {
 				return nil
 			}
@@ -307,17 +310,17 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 		log.Printf("[INFO] Removing enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
 
 		for _, batch := range chunk(toRemoveUsers) {
-			if diags := retryRemove(enterpriseCostCenterResourcesRequest{Users: batch}); diags.HasError() {
+			if diags := retryRemove(github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
 		for _, batch := range chunk(toRemoveOrgs) {
-			if diags := retryRemove(enterpriseCostCenterResourcesRequest{Organizations: batch}); diags.HasError() {
+			if diags := retryRemove(github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
 		for _, batch := range chunk(toRemoveRepos) {
-			if diags := retryRemove(enterpriseCostCenterResourcesRequest{Repositories: batch}); diags.HasError() {
+			if diags := retryRemove(github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
 		}
@@ -327,17 +330,17 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 		log.Printf("[INFO] Assigning enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
 
 		for _, batch := range chunk(toAddUsers) {
-			if diags := retryAssign(enterpriseCostCenterResourcesRequest{Users: batch}); diags.HasError() {
+			if diags := retryAssign(github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
 		for _, batch := range chunk(toAddOrgs) {
-			if diags := retryAssign(enterpriseCostCenterResourcesRequest{Organizations: batch}); diags.HasError() {
+			if diags := retryAssign(github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
 		for _, batch := range chunk(toAddRepos) {
-			if diags := retryAssign(enterpriseCostCenterResourcesRequest{Repositories: batch}); diags.HasError() {
+			if diags := retryAssign(github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
 		}
@@ -349,12 +352,8 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 func hasCostCenterAssignmentsConfigured(d *schema.ResourceData) bool {
 	assignmentKeys := []string{"users", "organizations", "repositories"}
 	for _, key := range assignmentKeys {
-		if v, ok := d.GetOkExists(key); ok {
+		if v, ok := d.GetOk(key); ok {
 			if set, ok := v.(*schema.Set); ok && set != nil && set.Len() > 0 {
-				return true
-			}
-			if !ok {
-				// Non-set values still indicate explicit configuration.
 				return true
 			}
 		}
@@ -415,6 +414,39 @@ func isRetryableGithubResponseError(err error) bool {
 		default:
 			return false
 		}
+	}
+	return false
+}
+
+func costCenterSplitResources(resources []*github.CostCenterResource) (users, organizations, repositories []string) {
+	for _, r := range resources {
+		if r == nil {
+			continue
+		}
+		switch strings.ToLower(r.Type) {
+		case "user":
+			users = append(users, r.Name)
+		case "org", "organization":
+			organizations = append(organizations, r.Name)
+		case "repo", "repository":
+			repositories = append(repositories, r.Name)
+		}
+	}
+	return users, organizations, repositories
+}
+
+func stringSliceToAnySlice(v []string) []any {
+	out := make([]any, 0, len(v))
+	for _, s := range v {
+		out = append(out, s)
+	}
+	return out
+}
+
+func is404(err error) bool {
+	var ghErr *github.ErrorResponse
+	if errors.As(err, &ghErr) && ghErr.Response != nil {
+		return ghErr.Response.StatusCode == 404
 	}
 	return false
 }

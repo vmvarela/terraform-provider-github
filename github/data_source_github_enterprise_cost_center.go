@@ -85,7 +85,7 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 
 	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 
-	cc, err := enterpriseCostCenterGet(ctx, client, enterpriseSlug, costCenterID)
+	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -93,15 +93,18 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 	d.SetId(costCenterID)
 	_ = d.Set("name", cc.Name)
 
-	state := strings.ToLower(cc.State)
+	state := strings.ToLower(cc.GetState())
 	if state == "" {
 		state = "active"
 	}
 	_ = d.Set("state", state)
-	_ = d.Set("azure_subscription", cc.AzureSubscription)
+	_ = d.Set("azure_subscription", cc.GetAzureSubscription())
 
 	resources := make([]map[string]any, 0)
 	for _, r := range cc.Resources {
+		if r == nil {
+			continue
+		}
 		resources = append(resources, map[string]any{
 			"type": r.Type,
 			"name": r.Name,
@@ -109,7 +112,7 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 	}
 	_ = d.Set("resources", resources)
 
-	users, organizations, repositories := enterpriseCostCenterSplitResources(cc.Resources)
+	users, organizations, repositories := costCenterSplitResources(cc.Resources)
 	sort.Strings(users)
 	sort.Strings(organizations)
 	sort.Strings(repositories)
