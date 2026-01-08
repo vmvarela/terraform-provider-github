@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -65,7 +66,7 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 	client := meta.(*Owner).v3client
 	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
 
-	var te *enterpriseTeam
+	var te *github.EnterpriseTeam
 	if v, ok := d.GetOk("team_id"); ok {
 		teamID := int64(v.(int))
 		if teamID != 0 {
@@ -85,14 +86,14 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 		if teamSlug == "" {
 			return diag.FromErr(fmt.Errorf("one of slug or team_id must be set"))
 		}
-		found, _, err := getEnterpriseTeamBySlug(ctx, client, enterpriseSlug, teamSlug)
+		found, _, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, teamSlug)
 		if err != nil {
 			return diag.FromErr(err)
 		}
 		te = found
 	}
 
-	d.SetId(buildSlashTwoPartID(enterpriseSlug, strconv.FormatInt(te.ID, 10)))
+	d.SetId(buildTwoPartID(enterpriseSlug, strconv.FormatInt(te.ID, 10)))
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return diag.FromErr(err)
 	}
@@ -114,15 +115,18 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 			return diag.FromErr(err)
 		}
 	}
-	orgSel := te.OrganizationSelectionType
+	orgSel := ""
+	if te.OrganizationSelectionType != nil {
+		orgSel = *te.OrganizationSelectionType
+	}
 	if orgSel == "" {
 		orgSel = "disabled"
 	}
 	if err := d.Set("organization_selection_type", orgSel); err != nil {
 		return diag.FromErr(err)
 	}
-	if te.GroupID != nil {
-		if err := d.Set("group_id", *te.GroupID); err != nil {
+	if te.GroupID != "" {
+		if err := d.Set("group_id", te.GroupID); err != nil {
 			return diag.FromErr(err)
 		}
 	} else {
@@ -132,4 +136,23 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 	}
 
 	return nil
+}
+
+// findEnterpriseTeamBySlugOrID finds a team by slug. If the slug looks like a numeric ID,
+// it will search for a team with that ID. Otherwise, it uses GetTeam to fetch directly by slug.
+func findEnterpriseTeamBySlugOrID(ctx context.Context, client *github.Client, enterpriseSlug, teamSlugOrID string) (*github.EnterpriseTeam, error) {
+	// First, try to get the team directly by slug
+	team, resp, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, teamSlugOrID)
+	if err == nil {
+		return team, nil
+	}
+	// If we got a 404, try searching by ID in case it's a numeric ID
+	if resp != nil && resp.StatusCode == 404 {
+		// Try to parse as int64 and search by ID
+		var id int64
+		if _, scanErr := fmt.Sscanf(teamSlugOrID, "%d", &id); scanErr == nil {
+			return findEnterpriseTeamByID(ctx, client, enterpriseSlug, id)
+		}
+	}
+	return nil, err
 }

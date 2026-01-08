@@ -2,7 +2,6 @@ package github
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
@@ -48,9 +47,9 @@ func TestAccGithubEnterpriseTeam(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_team.test", "organization_selection_type", "selected"),
 	)
 
-	testCase := func(t *testing.T, mode testMode) {
+	testCase := func(t *testing.T) {
 		resource.Test(t, resource.TestCase{
-			PreCheck:          func() { skipUnlessMode(t, mode) },
+			PreCheck:  func() { skipUnlessMode(t, enterprise) },
 			ProviderFactories: providerFactories,
 			Steps: []resource.TestStep{
 				{Config: config1, Check: check1},
@@ -66,7 +65,7 @@ func TestAccGithubEnterpriseTeam(t *testing.T) {
 	}
 
 	t.Run("with an enterprise account", func(t *testing.T) {
-		testCase(t, enterprise)
+		testCase(t)
 	})
 }
 
@@ -117,9 +116,9 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_team_organizations.test", "organization_slugs.#", "0"),
 	)
 
-	testCase := func(t *testing.T, mode testMode) {
+	testCase := func(t *testing.T) {
 		resource.Test(t, resource.TestCase{
-			PreCheck:          func() { skipUnlessMode(t, mode) },
+			PreCheck:  func() { skipUnlessMode(t, enterprise) },
 			ProviderFactories: providerFactories,
 			Steps: []resource.TestStep{
 				{Config: config1, Check: check1},
@@ -134,17 +133,13 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 	}
 
 	t.Run("with an enterprise account", func(t *testing.T) {
-		testCase(t, enterprise)
+		testCase(t)
 	})
 }
 
 func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
-	username := os.Getenv("GITHUB_TEST_USER")
-
-	if username == "" {
-		t.Skip("Skipping because `GITHUB_TEST_USER` is not set")
-	}
+	username := testAccConf.username
 
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -167,9 +162,9 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_team_membership.test", "username", username),
 	)
 
-	testCase := func(t *testing.T, mode testMode) {
+	testCase := func(t *testing.T) {
 		resource.Test(t, resource.TestCase{
-			PreCheck:          func() { skipUnlessMode(t, mode) },
+			PreCheck:  func() { skipUnlessMode(t, enterprise) },
 			ProviderFactories: providerFactories,
 			Steps: []resource.TestStep{
 				{Config: config, Check: check},
@@ -183,6 +178,6 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 	}
 
 	t.Run("with an enterprise account", func(t *testing.T) {
-		testCase(t, enterprise)
+		testCase(t)
 	})
 }

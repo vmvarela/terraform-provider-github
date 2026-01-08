@@ -2,7 +2,6 @@ package github
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
@@ -34,7 +33,7 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 	`, testAccConf.enterpriseSlug, randomID)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		PreCheck:  func() { skipUnlessMode(t, enterprise) },
 		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
@@ -81,7 +80,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 	`, testAccConf.enterpriseSlug, randomID, testAccConf.owner)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		PreCheck:  func() { skipUnlessMode(t, enterprise) },
 		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
@@ -98,11 +97,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 
 func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
-	username := os.Getenv("GITHUB_TEST_USER")
-
-	if username == "" {
-		t.Skip("Skipping because `GITHUB_TEST_USER` is not set")
-	}
+	username := testAccConf.username
 
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -129,7 +124,7 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 	`, testAccConf.enterpriseSlug, randomID, username, username)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		PreCheck:  func() { skipUnlessMode(t, enterprise) },
 		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
