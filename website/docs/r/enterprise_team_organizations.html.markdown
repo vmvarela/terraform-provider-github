@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "Github: github_enterprise_team_organizations"
+page_title: "GitHub: github_enterprise_team_organizations"
 description: |-
   Manages organization assignments for a GitHub enterprise team.
 ---
