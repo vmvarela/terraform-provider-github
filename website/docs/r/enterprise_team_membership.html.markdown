@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "Github: github_enterprise_team_membership"
+page_title: "GitHub: github_enterprise_team_membership"
 description: |-
   Manages membership in a GitHub enterprise team.
 ---
