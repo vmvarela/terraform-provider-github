@@ -26,11 +26,6 @@ func dataSourceGithubEnterpriseSCIMGroups() *schema.Resource {
 				Type:        schema.TypeString,
 				Optional:    true,
 			},
-			"excluded_attributes": {
-				Description: "Optional SCIM excludedAttributes query parameter.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
 			"results_per_page": {
 				Description:  "Number of results per request (mapped to SCIM 'count'). Used while auto-fetching all pages.",
 				Type:         schema.TypeInt,
@@ -77,10 +72,9 @@ func dataSourceGithubEnterpriseSCIMGroupsRead(ctx context.Context, d *schema.Res
 
 	enterprise := d.Get("enterprise").(string)
 	filter := d.Get("filter").(string)
-	excluded := d.Get("excluded_attributes").(string)
 	count := d.Get("results_per_page").(int)
 
-	groups, first, err := enterpriseSCIMListAllGroups(ctx, client, enterprise, filter, excluded, count)
+	groups, first, err := enterpriseSCIMListAllGroups(ctx, client, enterprise, filter, count)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -94,25 +88,20 @@ func dataSourceGithubEnterpriseSCIMGroupsRead(ctx context.Context, d *schema.Res
 	if filter != "" {
 		id = fmt.Sprintf("%s?filter=%s", id, url.QueryEscape(filter))
 	}
-	if excluded != "" {
-		if filter == "" {
-			id = fmt.Sprintf("%s?excluded_attributes=%s", id, url.QueryEscape(excluded))
-		} else {
-			id = fmt.Sprintf("%s&excluded_attributes=%s", id, url.QueryEscape(excluded))
-		}
-	}
 
 	d.SetId(id)
 
 	_ = d.Set("schemas", first.Schemas)
-	_ = d.Set("total_results", first.TotalResults)
-	if first.StartIndex > 0 {
-		_ = d.Set("start_index", first.StartIndex)
+	if first.TotalResults != nil {
+		_ = d.Set("total_results", *first.TotalResults)
+	}
+	if first.StartIndex != nil && *first.StartIndex > 0 {
+		_ = d.Set("start_index", *first.StartIndex)
 	} else {
 		_ = d.Set("start_index", 1)
 	}
-	if first.ItemsPerPage > 0 {
-		_ = d.Set("items_per_page", first.ItemsPerPage)
+	if first.ItemsPerPage != nil && *first.ItemsPerPage > 0 {
+		_ = d.Set("items_per_page", *first.ItemsPerPage)
 	} else {
 		_ = d.Set("items_per_page", count)
 	}

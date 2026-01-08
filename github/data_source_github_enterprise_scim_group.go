@@ -24,11 +24,6 @@ func dataSourceGithubEnterpriseSCIMGroup() *schema.Resource {
 				Type:        schema.TypeString,
 				Required:    true,
 			},
-			"excluded_attributes": {
-				Description: "Optional SCIM excludedAttributes query parameter.",
-				Type:        schema.TypeString,
-				Optional:    true,
-			},
 
 			"schemas": {
 				Type:        schema.TypeList,
@@ -72,16 +67,8 @@ func dataSourceGithubEnterpriseSCIMGroupRead(ctx context.Context, d *schema.Reso
 
 	enterprise := d.Get("enterprise").(string)
 	scimGroupID := d.Get("scim_group_id").(string)
-	excluded := d.Get("excluded_attributes").(string)
 
-	path := fmt.Sprintf("scim/v2/enterprises/%s/Groups/%s", enterprise, scimGroupID)
-	urlStr, err := enterpriseSCIMListURL(path, enterpriseSCIMListOptions{ExcludedAttributes: excluded})
-	if err != nil {
-		return diag.FromErr(err)
-	}
-
-	group := enterpriseSCIMGroup{}
-	_, err = enterpriseSCIMGet(ctx, client, urlStr, &group)
+	group, _, err := client.Enterprise.GetProvisionedSCIMGroup(ctx, enterprise, scimGroupID, nil)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -89,9 +76,15 @@ func dataSourceGithubEnterpriseSCIMGroupRead(ctx context.Context, d *schema.Reso
 	d.SetId(fmt.Sprintf("%s/%s", enterprise, scimGroupID))
 
 	_ = d.Set("schemas", group.Schemas)
-	_ = d.Set("id", group.ID)
-	_ = d.Set("external_id", group.ExternalID)
-	_ = d.Set("display_name", group.DisplayName)
+	if group.ID != nil {
+		_ = d.Set("id", *group.ID)
+	}
+	if group.ExternalID != nil {
+		_ = d.Set("external_id", *group.ExternalID)
+	}
+	if group.DisplayName != nil {
+		_ = d.Set("display_name", *group.DisplayName)
+	}
 	_ = d.Set("members", flattenEnterpriseSCIMGroupMembers(group.Members))
 	_ = d.Set("meta", flattenEnterpriseSCIMMeta(group.Meta))
 

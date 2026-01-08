@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"testing"
 
-	gh "github.com/google/go-github/v67/github"
+	gh "github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
@@ -14,9 +14,9 @@ func TestDataSourceGithubEnterpriseSCIMUsersRead_fetchAllPages_withFilter(t *tes
 	filter := "userName eq \"test\""
 	ts := githubApiMock([]*mockResponse{
 		{
-			ExpectedUri: "/scim/v2/enterprises/ent/Users?count=2&excludedAttributes=members&filter=userName+eq+%22test%22&startIndex=1",
+			ExpectedUri: "/scim/v2/enterprises/ent/Users?count=2&filter=userName+eq+%22test%22&startIndex=1",
 			ExpectedHeaders: map[string]string{
-				"Accept": enterpriseSCIMAcceptHeader,
+				"Accept": "application/scim+json",
 			},
 			StatusCode: 200,
 			ResponseBody: `{
@@ -31,9 +31,9 @@ func TestDataSourceGithubEnterpriseSCIMUsersRead_fetchAllPages_withFilter(t *tes
 }`,
 		},
 		{
-			ExpectedUri: "/scim/v2/enterprises/ent/Users?count=2&excludedAttributes=members&filter=userName+eq+%22test%22&startIndex=3",
+			ExpectedUri: "/scim/v2/enterprises/ent/Users?count=2&filter=userName+eq+%22test%22&startIndex=3",
 			ExpectedHeaders: map[string]string{
-				"Accept": enterpriseSCIMAcceptHeader,
+				"Accept": "application/scim+json",
 			},
 			StatusCode: 200,
 			ResponseBody: `{
@@ -58,10 +58,9 @@ func TestDataSourceGithubEnterpriseSCIMUsersRead_fetchAllPages_withFilter(t *tes
 
 	r := dataSourceGithubEnterpriseSCIMUsers()
 	d := schema.TestResourceDataRaw(t, r.Schema, map[string]any{
-		"enterprise":          "ent",
-		"results_per_page":    2,
-		"filter":              filter,
-		"excluded_attributes": "members",
+		"enterprise":       "ent",
+		"results_per_page": 2,
+		"filter":           filter,
 	})
 
 	diags := dataSourceGithubEnterpriseSCIMUsersRead(context.Background(), d, owner)
