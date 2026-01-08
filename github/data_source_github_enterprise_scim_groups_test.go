@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"testing"
 
-	gh "github.com/google/go-github/v67/github"
+	gh "github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
@@ -15,7 +15,7 @@ func TestDataSourceGithubEnterpriseSCIMGroupsRead_fetchAllPages(t *testing.T) {
 		{
 			ExpectedUri: "/scim/v2/enterprises/ent/Groups?count=2&startIndex=1",
 			ExpectedHeaders: map[string]string{
-				"Accept": enterpriseSCIMAcceptHeader,
+				"Accept": "application/scim+json",
 			},
 			StatusCode: 200,
 			ResponseBody: `{
@@ -32,7 +32,7 @@ func TestDataSourceGithubEnterpriseSCIMGroupsRead_fetchAllPages(t *testing.T) {
 		{
 			ExpectedUri: "/scim/v2/enterprises/ent/Groups?count=2&startIndex=3",
 			ExpectedHeaders: map[string]string{
-				"Accept": enterpriseSCIMAcceptHeader,
+				"Accept": "application/scim+json",
 			},
 			StatusCode: 200,
 			ResponseBody: `{
@@ -57,10 +57,9 @@ func TestDataSourceGithubEnterpriseSCIMGroupsRead_fetchAllPages(t *testing.T) {
 
 	r := dataSourceGithubEnterpriseSCIMGroups()
 	d := schema.TestResourceDataRaw(t, r.Schema, map[string]any{
-		"enterprise":          "ent",
-		"results_per_page":    2,
-		"filter":              "",
-		"excluded_attributes": "",
+		"enterprise":       "ent",
+		"results_per_page": 2,
+		"filter":           "",
 	})
 
 	diags := dataSourceGithubEnterpriseSCIMGroupsRead(context.Background(), d, owner)
