@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "Github: github_enterprise_cost_center"
+page_title: "GitHub: github_enterprise_cost_center"
 description: |-
   Get a GitHub enterprise cost center by ID.
 ---
