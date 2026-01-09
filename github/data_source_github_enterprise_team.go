@@ -84,7 +84,7 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 	if te == nil {
 		teamSlug := strings.TrimSpace(d.Get("slug").(string))
 		if teamSlug == "" {
-			return diag.FromErr(fmt.Errorf("one of slug or team_id must be set"))
+			return diag.Errorf("one of slug or team_id must be set")
 		}
 		found, _, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, teamSlug)
 		if err != nil {
