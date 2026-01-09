@@ -14,6 +14,7 @@ import (
 
 func dataSourceGithubEnterpriseTeam() *schema.Resource {
 	return &schema.Resource{
+		Description: "Gets information about a GitHub enterprise team.",
 		ReadContext: dataSourceGithubEnterpriseTeamRead,
 
 		Schema: map[string]*schema.Schema{
@@ -34,7 +35,6 @@ func dataSourceGithubEnterpriseTeam() *schema.Resource {
 				Type:             schema.TypeInt,
 				Optional:         true,
 				Computed:         true,
-				ConflictsWith:    []string{"slug"},
 				Description:      "The numeric ID of the enterprise team.",
 				ValidateDiagFunc: validation.ToDiagFunc(validation.IntAtLeast(1)),
 			},
