@@ -62,7 +62,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 
 		resource "github_enterprise_team" "test" {
 			enterprise_slug             = data.github_enterprise.enterprise.slug
-			name                        = "tf-acc-ds-team-orgs-%s"
+			name                        = "%s%s"
 			organization_selection_type = "selected"
 		}
 
@@ -77,7 +77,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 			enterprise_team = github_enterprise_team.test.slug
 			depends_on      = [github_enterprise_team_organizations.assign]
 		}
-	`, testAccConf.enterpriseSlug, randomID, testAccConf.owner)
+	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.owner)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:  func() { skipUnlessMode(t, enterprise) },
@@ -106,7 +106,7 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 
 		resource "github_enterprise_team" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			name            = "tf-acc-ds-team-member-%s"
+			name            = "%s%s"
 		}
 
 		resource "github_enterprise_team_membership" "test" {
@@ -121,7 +121,7 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 			username        = "%s"
 			depends_on      = [github_enterprise_team_membership.test]
 		}
-	`, testAccConf.enterpriseSlug, randomID, username, username)
+	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, username, username)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:  func() { skipUnlessMode(t, enterprise) },

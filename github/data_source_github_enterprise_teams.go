@@ -10,6 +10,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 )
 
+const (
+	teamIDKey                      = "team_id"
+	teamSlugKey                    = "slug"
+	teamNameKey                    = "name"
+	teamDescriptionKey             = "description"
+	teamOrganizationSelectionKey   = "organization_selection_type"
+	teamGroupIDKey                 = "group_id"
+)
+
 func dataSourceGithubEnterpriseTeams() *schema.Resource {
 	return &schema.Resource{
 		Description: "Lists all GitHub enterprise teams in an enterprise.",
@@ -28,32 +37,32 @@ func dataSourceGithubEnterpriseTeams() *schema.Resource {
 				Description: "All teams in the enterprise.",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"team_id": {
+						teamIDKey: {
 							Type:        schema.TypeInt,
 							Computed:    true,
 							Description: "The numeric ID of the enterprise team.",
 						},
-						"slug": {
+						teamSlugKey: {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "The slug of the enterprise team.",
 						},
-						"name": {
+						teamNameKey: {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "The name of the enterprise team.",
 						},
-						"description": {
+						teamDescriptionKey: {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "A description of the enterprise team.",
 						},
-						"organization_selection_type": {
+						teamOrganizationSelectionKey: {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "Specifies which organizations in the enterprise should have access to this team.",
 						},
-						"group_id": {
+						teamGroupIDKey: {
 							Type:        schema.TypeString,
 							Computed:    true,
 							Description: "The ID of the IdP group to assign team membership with.",
@@ -76,14 +85,14 @@ func dataSourceGithubEnterpriseTeamsRead(ctx context.Context, d *schema.Resource
 	flat := make([]any, 0, len(teams))
 	for _, t := range teams {
 		m := map[string]any{
-			"team_id": int(t.ID),
-			"slug":    t.Slug,
-			"name":    t.Name,
+			teamIDKey:   int(t.ID),
+			teamSlugKey: t.Slug,
+			teamNameKey: t.Name,
 		}
 		if t.Description != nil {
-			m["description"] = *t.Description
+			m[teamDescriptionKey] = *t.Description
 		} else {
-			m["description"] = ""
+			m[teamDescriptionKey] = ""
 		}
 		orgSel := ""
 		if t.OrganizationSelectionType != nil {
@@ -92,11 +101,11 @@ func dataSourceGithubEnterpriseTeamsRead(ctx context.Context, d *schema.Resource
 		if orgSel == "" {
 			orgSel = "disabled"
 		}
-		m["organization_selection_type"] = orgSel
+		m[teamOrganizationSelectionKey] = orgSel
 		if t.GroupID != "" {
-			m["group_id"] = t.GroupID
+			m[teamGroupIDKey] = t.GroupID
 		} else {
-			m["group_id"] = ""
+			m[teamGroupIDKey] = ""
 		}
 		flat = append(flat, m)
 	}
