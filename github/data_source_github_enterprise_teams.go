@@ -11,12 +11,12 @@ import (
 )
 
 const (
-	teamIDKey                      = "team_id"
-	teamSlugKey                    = "slug"
-	teamNameKey                    = "name"
-	teamDescriptionKey             = "description"
-	teamOrganizationSelectionKey   = "organization_selection_type"
-	teamGroupIDKey                 = "group_id"
+	teamIDKey                    = "team_id"
+	teamSlugKey                  = "slug"
+	teamNameKey                  = "name"
+	teamDescriptionKey           = "description"
+	teamOrganizationSelectionKey = "organization_selection_type"
+	teamGroupIDKey               = "group_id"
 )
 
 func dataSourceGithubEnterpriseTeams() *schema.Resource {

@@ -18,14 +18,14 @@ func TestAccGithubEnterpriseTeamsDataSource(t *testing.T) {
 
 		resource "github_enterprise_team" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			name            = "tf-acc-ds-enterprise-teams-%s"
+			name            = "%s%s"
 		}
 
 		data "github_enterprise_teams" "all" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
 			depends_on      = [github_enterprise_team.test]
 		}
-	`, testAccConf.enterpriseSlug, randomID)
+	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:  func() { skipUnlessMode(t, enterprise) },
