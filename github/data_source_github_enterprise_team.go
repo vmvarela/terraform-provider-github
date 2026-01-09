@@ -75,7 +75,7 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 				return diag.FromErr(err)
 			}
 			if found == nil {
-				return diag.FromErr(fmt.Errorf("could not find enterprise team %d in enterprise %s", teamID, enterpriseSlug))
+				return diag.Errorf("could not find enterprise team %d in enterprise %s", teamID, enterpriseSlug)
 			}
 			te = found
 		}
