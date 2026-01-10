@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "GitHub: github_enterprise_team_organizations"
+page_title: "Github: github_enterprise_team_organizations"
 description: |-
   Get organizations assigned to a GitHub enterprise team.
 ---
@@ -16,7 +16,7 @@ Use this data source to retrieve the organizations that an enterprise team has a
 ```hcl
 data "github_enterprise_team_organizations" "example" {
   enterprise_slug = "my-enterprise"
-  enterprise_team = "ent:platform"
+  team_slug       = "ent:platform"
 }
 
 output "assigned_orgs" {
@@ -29,7 +29,7 @@ output "assigned_orgs" {
 The following arguments are supported:
 
 * `enterprise_slug` - (Required) The slug of the enterprise.
-* `enterprise_team` - (Required) The slug or ID of the enterprise team.
+* `team_slug` - (Required) The slug of the enterprise team.
 
 ## Attributes Reference
 
