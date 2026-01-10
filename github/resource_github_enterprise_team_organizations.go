@@ -202,8 +202,12 @@ func resourceGithubEnterpriseTeamOrganizationsDelete(ctx context.Context, d *sch
 		for _, v := range orgSlugsSet.List() {
 			removeSlugs = append(removeSlugs, v.(string))
 		}
-		_, _, err = client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
+		_, resp, err := client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
 		if err != nil {
+			// Already gone? That's fine, we wanted it deleted anyway.
+			if resp != nil && resp.StatusCode == 404 {
+				return nil
+			}
 			return diag.FromErr(err)
 		}
 	}

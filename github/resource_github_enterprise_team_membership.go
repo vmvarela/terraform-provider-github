@@ -160,8 +160,12 @@ func resourceGithubEnterpriseTeamMembershipDelete(ctx context.Context, d *schema
 	}
 
 	// Remove the user from the team using the SDK
-	_, err = client.Enterprise.RemoveTeamMember(ctx, enterpriseSlug, teamSlug, username)
+	resp, err := client.Enterprise.RemoveTeamMember(ctx, enterpriseSlug, teamSlug, username)
 	if err != nil {
+		// Already gone? That's fine, we wanted it deleted anyway.
+		if resp != nil && resp.StatusCode == 404 {
+			return nil
+		}
 		return diag.FromErr(err)
 	}
 

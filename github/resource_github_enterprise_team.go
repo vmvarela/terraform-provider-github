@@ -277,6 +277,8 @@ func resourceGithubEnterpriseTeamImport(_ context.Context, d *schema.ResourceDat
 
 	enterpriseSlug, teamID := parts[0], parts[1]
 	d.SetId(teamID)
-	_ = d.Set("enterprise_slug", enterpriseSlug)
+	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
+		return nil, err
+	}
 	return []*schema.ResourceData{d}, nil
 }
