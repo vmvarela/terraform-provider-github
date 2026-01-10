@@ -88,9 +88,11 @@ func resourceGithubEnterpriseTeamMembershipCreate(ctx context.Context, d *schema
 
 	d.SetId(buildEnterpriseTeamMembershipID(enterpriseSlug, team.Slug, username))
 
-	// Set team_slug to the resolved slug from the API
-	if err := d.Set("team_slug", team.Slug); err != nil {
-		return diag.FromErr(err)
+	// Only set team_slug if user provided it (not when using team_id)
+	if _, ok := d.GetOk("team_slug"); ok {
+		if err := d.Set("team_slug", team.Slug); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	if user != nil && user.ID != nil {

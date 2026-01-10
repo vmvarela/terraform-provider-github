@@ -90,9 +90,11 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 
 	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, team.Slug))
 
-	// Set team_slug to the resolved slug
-	if err := d.Set("team_slug", team.Slug); err != nil {
-		return diag.FromErr(err)
+	// Only set team_slug if user provided it (not when using team_id)
+	if _, ok := d.GetOk("team_slug"); ok {
+		if err := d.Set("team_slug", team.Slug); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
@@ -98,6 +99,39 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 				ResourceName:      "github_enterprise_team_organizations.test",
 				ImportState:       true,
 				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccGithubEnterpriseTeamOrganizations_emptyOrganizations(t *testing.T) {
+	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
+
+	config := fmt.Sprintf(`
+		data "github_enterprise" "enterprise" {
+			slug = "%s"
+		}
+
+		resource "github_enterprise_team" "test" {
+			enterprise_slug             = data.github_enterprise.enterprise.slug
+			name                        = "tf-acc-team-empty-orgs-%s"
+			organization_selection_type = "selected"
+		}
+
+		resource "github_enterprise_team_organizations" "test" {
+			enterprise_slug    = data.github_enterprise.enterprise.slug
+			team_slug          = github_enterprise_team.test.slug
+			organization_slugs = []
+		}
+	`, testAccConf.enterpriseSlug, randomID)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:      config,
+				ExpectError: regexp.MustCompile(`Attribute organization_slugs requires 1 item minimum`),
 			},
 		},
 	})
