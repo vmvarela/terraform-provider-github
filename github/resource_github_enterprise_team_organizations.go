@@ -90,9 +90,13 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 
 	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, team.Slug))
 
-	// Only set team_slug if user provided it (not when using team_id)
+	// Only set team_slug or team_id based on what user provided
 	if _, ok := d.GetOk("team_slug"); ok {
 		if err := d.Set("team_slug", team.Slug); err != nil {
+			return diag.FromErr(err)
+		}
+	} else if v, ok := d.GetOk("team_id"); ok {
+		if err := d.Set("team_id", v.(int)); err != nil {
 			return diag.FromErr(err)
 		}
 	}
@@ -122,8 +126,17 @@ func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schem
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("team_slug", teamSlug); err != nil {
-		return diag.FromErr(err)
+	// Only set team_slug if it was configured, or if neither team_slug nor team_id
+	// is present (e.g., during import). This avoids drift when users configure team_id.
+	if _, ok := d.GetOk("team_slug"); ok {
+		if err := d.Set("team_slug", teamSlug); err != nil {
+			return diag.FromErr(err)
+		}
+	} else if _, ok := d.GetOk("team_id"); !ok {
+		// During import, neither is set, so we populate team_slug
+		if err := d.Set("team_slug", teamSlug); err != nil {
+			return diag.FromErr(err)
+		}
 	}
 	if err := d.Set("organization_slugs", slugs); err != nil {
 		return diag.FromErr(err)
