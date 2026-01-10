@@ -27,7 +27,7 @@ resource "github_enterprise_team" "team" {
 
 resource "github_enterprise_team_organizations" "assignments" {
   enterprise_slug = data.github_enterprise.enterprise.slug
-  enterprise_team = github_enterprise_team.team.slug
+  team_slug       = github_enterprise_team.team.slug
 
   organization_slugs = [
     "my-org",
@@ -41,8 +41,9 @@ resource "github_enterprise_team_organizations" "assignments" {
 The following arguments are supported:
 
 * `enterprise_slug` - (Required) The slug of the enterprise.
-* `enterprise_team` - (Required) The slug or ID of the enterprise team.
-* `organization_slugs` - (Optional) Set of organization slugs to assign the team to.
+* `team_slug` - (Optional) The slug of the enterprise team. Exactly one of `team_slug` or `team_id` must be specified.
+* `team_id` - (Optional) The ID of the enterprise team. Exactly one of `team_slug` or `team_id` must be specified.
+* `organization_slugs` - (Required) Set of organization slugs to assign the team to (minimum 1).
 
 ## Import
 

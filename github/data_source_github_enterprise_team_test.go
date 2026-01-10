@@ -33,7 +33,7 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 	`, testAccConf.enterpriseSlug, randomID)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
 		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
@@ -68,19 +68,19 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 
 		resource "github_enterprise_team_organizations" "assign" {
 			enterprise_slug    = data.github_enterprise.enterprise.slug
-			enterprise_team    = github_enterprise_team.test.slug
+			team_slug          = github_enterprise_team.test.slug
 			organization_slugs = ["%s"]
 		}
 
 		data "github_enterprise_team_organizations" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			team_slug       = github_enterprise_team.test.slug
 			depends_on      = [github_enterprise_team_organizations.assign]
 		}
 	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.owner)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
 		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
@@ -111,20 +111,20 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 
 		resource "github_enterprise_team_membership" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			team_slug       = github_enterprise_team.test.slug
 			username        = "%s"
 		}
 
 		data "github_enterprise_team_membership" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			team_slug       = github_enterprise_team.test.slug
 			username        = "%s"
 			depends_on      = [github_enterprise_team_membership.test]
 		}
 	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, username, username)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
 		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
