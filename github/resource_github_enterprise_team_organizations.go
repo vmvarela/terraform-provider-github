@@ -95,8 +95,8 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 		if err := d.Set("team_slug", team.Slug); err != nil {
 			return diag.FromErr(err)
 		}
-	} else if v, ok := d.GetOk("team_id"); ok {
-		if err := d.Set("team_id", v.(int)); err != nil {
+	} else if _, ok := d.GetOk("team_id"); ok {
+		if err := d.Set("team_id", int(team.ID)); err != nil {
 			return diag.FromErr(err)
 		}
 	}
