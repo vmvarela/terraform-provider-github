@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
@@ -47,25 +48,19 @@ func TestAccGithubEnterpriseTeam(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_team.test", "organization_selection_type", "selected"),
 	)
 
-	testCase := func(t *testing.T) {
-		resource.Test(t, resource.TestCase{
-			PreCheck:  func() { skipUnlessEnterprise(t) },
-			Providers: testAccProviders,
-			Steps: []resource.TestStep{
-				{Config: config1, Check: check1},
-				{Config: config2, Check: check2},
-				{
-					ResourceName:        "github_enterprise_team.test",
-					ImportState:         true,
-					ImportStateVerify:   true,
-					ImportStateIdPrefix: fmt.Sprintf(`%s/`, testAccConf.enterpriseSlug),
-				},
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{
+			{Config: config1, Check: check1},
+			{Config: config2, Check: check2},
+			{
+				ResourceName:        "github_enterprise_team.test",
+				ImportState:         true,
+				ImportStateVerify:   true,
+				ImportStateIdPrefix: fmt.Sprintf(`%s/`, testAccConf.enterpriseSlug),
 			},
-		})
-	}
-
-	t.Run("with an enterprise account", func(t *testing.T) {
-		testCase(t)
+		},
 	})
 }
 
@@ -85,55 +80,60 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 
 		resource "github_enterprise_team_organizations" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			team_slug       = github_enterprise_team.test.slug
 			organization_slugs = ["%s"]
 		}
 	`, testAccConf.enterpriseSlug, randomID, testAccConf.owner)
 
-	config2 := fmt.Sprintf(`
+	check1 := resource.ComposeAggregateTestCheckFunc(
+		resource.TestCheckResourceAttr("github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
+	)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{
+			{Config: config1, Check: check1},
+			{
+				ResourceName:      "github_enterprise_team_organizations.test",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccGithubEnterpriseTeamOrganizations_emptyOrganizations(t *testing.T) {
+	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
+
+	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
 			slug = "%s"
 		}
 
 		resource "github_enterprise_team" "test" {
 			enterprise_slug             = data.github_enterprise.enterprise.slug
-			name                        = "tf-acc-team-orgs-%s"
+			name                        = "tf-acc-team-empty-orgs-%s"
 			organization_selection_type = "selected"
 		}
 
 		resource "github_enterprise_team_organizations" "test" {
-			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			enterprise_slug    = data.github_enterprise.enterprise.slug
+			team_slug          = github_enterprise_team.test.slug
 			organization_slugs = []
 		}
 	`, testAccConf.enterpriseSlug, randomID)
 
-	check1 := resource.ComposeAggregateTestCheckFunc(
-		resource.TestCheckResourceAttr("github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
-	)
-	check2 := resource.ComposeAggregateTestCheckFunc(
-		resource.TestCheckResourceAttr("github_enterprise_team_organizations.test", "organization_slugs.#", "0"),
-	)
-
-	testCase := func(t *testing.T) {
-		resource.Test(t, resource.TestCase{
-			PreCheck:  func() { skipUnlessEnterprise(t) },
-			Providers: testAccProviders,
-			Steps: []resource.TestStep{
-				{Config: config1, Check: check1},
-				{Config: config2, Check: check2},
-				{
-					ResourceName:      "github_enterprise_team_organizations.test",
-					ImportState:       true,
-					ImportStateVerify: true,
-				},
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:      config,
+				ExpectError: regexp.MustCompile(`Attribute organization_slugs requires 1 item minimum`),
 			},
-		})
-	}
-
-	t.Run("with an enterprise account", func(t *testing.T) {
-		testCase(t)
+		},
 	})
 }
 
@@ -153,7 +153,7 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 
 		resource "github_enterprise_team_membership" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			team_slug       = github_enterprise_team.test.slug
 			username        = "%s"
 		}
 	`, testAccConf.enterpriseSlug, randomID, username)
@@ -162,22 +162,16 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_team_membership.test", "username", username),
 	)
 
-	testCase := func(t *testing.T) {
-		resource.Test(t, resource.TestCase{
-			PreCheck:  func() { skipUnlessEnterprise(t) },
-			Providers: testAccProviders,
-			Steps: []resource.TestStep{
-				{Config: config, Check: check},
-				{
-					ResourceName:      "github_enterprise_team_membership.test",
-					ImportState:       true,
-					ImportStateVerify: true,
-				},
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{
+			{Config: config, Check: check},
+			{
+				ResourceName:      "github_enterprise_team_membership.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
-		})
-	}
-
-	t.Run("with an enterprise account", func(t *testing.T) {
-		testCase(t)
+		},
 	})
 }

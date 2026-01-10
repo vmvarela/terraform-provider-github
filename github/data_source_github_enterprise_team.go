@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -25,16 +24,18 @@ func dataSourceGithubEnterpriseTeam() *schema.Resource {
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
 			"slug": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				Computed:     true,
-				ExactlyOneOf: []string{"team_id"},
-				Description:  "The slug of the enterprise team.",
+				Type:             schema.TypeString,
+				Optional:         true,
+				Computed:         true,
+				ExactlyOneOf:     []string{"slug", "team_id"},
+				Description:      "The slug of the enterprise team.",
+				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
 			"team_id": {
 				Type:             schema.TypeInt,
 				Optional:         true,
 				Computed:         true,
+				ExactlyOneOf:     []string{"slug", "team_id"},
 				Description:      "The numeric ID of the enterprise team.",
 				ValidateDiagFunc: validation.ToDiagFunc(validation.IntAtLeast(1)),
 			},
@@ -136,23 +137,4 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 	}
 
 	return nil
-}
-
-// findEnterpriseTeamBySlugOrID finds a team by slug. If the slug looks like a numeric ID,
-// it will search for a team with that ID. Otherwise, it uses GetTeam to fetch directly by slug.
-func findEnterpriseTeamBySlugOrID(ctx context.Context, client *github.Client, enterpriseSlug, teamSlugOrID string) (*github.EnterpriseTeam, error) {
-	// First, try to get the team directly by slug
-	team, resp, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, teamSlugOrID)
-	if err == nil {
-		return team, nil
-	}
-	// If we got a 404, try searching by ID in case it's a numeric ID
-	if resp != nil && resp.StatusCode == 404 {
-		// Try to parse as int64 and search by ID
-		var id int64
-		if _, scanErr := fmt.Sscanf(teamSlugOrID, "%d", &id); scanErr == nil {
-			return findEnterpriseTeamByID(ctx, client, enterpriseSlug, id)
-		}
-	}
-	return nil, err
 }

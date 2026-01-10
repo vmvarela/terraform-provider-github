@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "GitHub: github_enterprise_team_membership"
+page_title: "Github: github_enterprise_team_membership"
 description: |-
   Manages membership in a GitHub enterprise team.
 ---
@@ -25,7 +25,7 @@ resource "github_enterprise_team" "team" {
 
 resource "github_enterprise_team_membership" "member" {
   enterprise_slug = data.github_enterprise.enterprise.slug
-  enterprise_team = github_enterprise_team.team.slug
+  team_slug       = github_enterprise_team.team.slug
   username        = "octocat"
 }
 ```
@@ -35,7 +35,8 @@ resource "github_enterprise_team_membership" "member" {
 The following arguments are supported:
 
 * `enterprise_slug` - (Required) The slug of the enterprise.
-* `enterprise_team` - (Required) The slug or ID of the enterprise team.
+* `team_slug` - (Optional) The slug of the enterprise team. Exactly one of `team_slug` or `team_id` must be specified.
+* `team_id` - (Optional) The ID of the enterprise team. Exactly one of `team_slug` or `team_id` must be specified.
 * `username` - (Required) The GitHub username to manage.
 
 ## Import

@@ -28,8 +28,8 @@ func TestAccGithubEnterpriseTeamsDataSource(t *testing.T) {
 	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessEnterprise(t) },
-		Providers: testAccProviders,
+		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: config,

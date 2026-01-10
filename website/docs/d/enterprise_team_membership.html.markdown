@@ -1,6 +1,6 @@
 ---
 layout: "github"
-page_title: "GitHub: github_enterprise_team_membership"
+page_title: "Github: github_enterprise_team_membership"
 description: |-
   Check if a user is a member of a GitHub enterprise team.
 ---
@@ -16,7 +16,7 @@ Use this data source to check whether a user belongs to an enterprise team.
 ```hcl
 data "github_enterprise_team_membership" "example" {
   enterprise_slug = "my-enterprise"
-  enterprise_team = "ent:platform"
+  team_slug       = "ent:platform"
   username        = "octocat"
 }
 ```
@@ -26,7 +26,7 @@ data "github_enterprise_team_membership" "example" {
 The following arguments are supported:
 
 * `enterprise_slug` - (Required) The slug of the enterprise.
-* `enterprise_team` - (Required) The slug or ID of the enterprise team.
+* `team_slug` - (Required) The slug of the enterprise team.
 * `username` - (Required) The GitHub username.
 
 ## Attributes Reference
