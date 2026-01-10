@@ -21,10 +21,10 @@ func dataSourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 				Description:      "The slug of the enterprise.",
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
-			"enterprise_team": {
+			"team_slug": {
 				Type:             schema.TypeString,
 				Required:         true,
-				Description:      "The slug or ID of the enterprise team.",
+				Description:      "The slug of the enterprise team.",
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
 			"organization_slugs": {
@@ -41,8 +41,8 @@ func dataSourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 func dataSourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
-	enterpriseTeam := strings.TrimSpace(d.Get("enterprise_team").(string))
-	orgs, err := listAllEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, enterpriseTeam)
+	teamSlug := strings.TrimSpace(d.Get("team_slug").(string))
+	orgs, err := listAllEnterpriseTeamOrganizations(ctx, client, enterpriseSlug, teamSlug)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -54,11 +54,11 @@ func dataSourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *sch
 		}
 	}
 
-	d.SetId(buildTwoPartID(enterpriseSlug, enterpriseTeam))
+	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, teamSlug))
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("enterprise_team", enterpriseTeam); err != nil {
+	if err := d.Set("team_slug", teamSlug); err != nil {
 		return diag.FromErr(err)
 	}
 	if err := d.Set("organization_slugs", slugs); err != nil {

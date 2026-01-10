@@ -74,7 +74,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 
 		data "github_enterprise_team_organizations" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			team_slug       = github_enterprise_team.test.slug
 			depends_on      = [github_enterprise_team_organizations.assign]
 		}
 	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.owner)
@@ -117,7 +117,7 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 
 		data "github_enterprise_team_membership" "test" {
 			enterprise_slug = data.github_enterprise.enterprise.slug
-			enterprise_team = github_enterprise_team.test.slug
+			team_slug       = github_enterprise_team.test.slug
 			username        = "%s"
 			depends_on      = [github_enterprise_team_membership.test]
 		}

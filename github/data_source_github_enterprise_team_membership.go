@@ -21,10 +21,10 @@ func dataSourceGithubEnterpriseTeamMembership() *schema.Resource {
 				Description:      "The slug of the enterprise.",
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
-			"enterprise_team": {
+			"team_slug": {
 				Type:             schema.TypeString,
 				Required:         true,
-				Description:      "The slug or ID of the enterprise team.",
+				Description:      "The slug of the enterprise team.",
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
 			"username": {
@@ -45,20 +45,20 @@ func dataSourceGithubEnterpriseTeamMembership() *schema.Resource {
 func dataSourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
-	enterpriseTeam := strings.TrimSpace(d.Get("enterprise_team").(string))
+	teamSlug := strings.TrimSpace(d.Get("team_slug").(string))
 	username := strings.TrimSpace(d.Get("username").(string))
 
 	// Get the membership using the SDK
-	user, _, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, enterpriseTeam, username)
+	user, _, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, teamSlug, username)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	d.SetId(buildThreePartID(enterpriseSlug, enterpriseTeam, username))
+	d.SetId(buildEnterpriseTeamMembershipID(enterpriseSlug, teamSlug, username))
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("enterprise_team", enterpriseTeam); err != nil {
+	if err := d.Set("team_slug", teamSlug); err != nil {
 		return diag.FromErr(err)
 	}
 	if err := d.Set("username", username); err != nil {

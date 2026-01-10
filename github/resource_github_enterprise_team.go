@@ -92,9 +92,7 @@ func resourceGithubEnterpriseTeamCreate(ctx context.Context, d *schema.ResourceD
 		Name:                      name,
 		Description:               github.Ptr(description),
 		OrganizationSelectionType: github.Ptr(orgSelection),
-	}
-	if groupID != "" {
-		req.GroupID = github.Ptr(groupID)
+		GroupID:                   github.Ptr(groupID), // Empty string is valid for no group
 	}
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
@@ -214,9 +212,7 @@ func resourceGithubEnterpriseTeamUpdate(ctx context.Context, d *schema.ResourceD
 		Name:                      name,
 		Description:               github.Ptr(description),
 		OrganizationSelectionType: github.Ptr(orgSelection),
-	}
-	if groupID != "" {
-		req.GroupID = github.Ptr(groupID)
+		GroupID:                   github.Ptr(groupID), // Empty string clears the group
 	}
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
