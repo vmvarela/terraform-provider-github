@@ -52,5 +52,5 @@
     - '^docs-'
     - '^doc/'
     - '^doc-'
-  # - changed-files:
-  #   - any-glob-to-any-file: 'website/**'
+  - changed-files:
+    - any-glob-to-any-file: 'website/**'
