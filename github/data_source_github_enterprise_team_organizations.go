@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -66,24 +65,4 @@ func dataSourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *sch
 		return diag.FromErr(err)
 	}
 	return nil
-}
-
-// listAllEnterpriseTeamOrganizations returns all organizations assigned to an enterprise team with pagination handled.
-func listAllEnterpriseTeamOrganizations(ctx context.Context, client *github.Client, enterpriseSlug, enterpriseTeam string) ([]*github.Organization, error) {
-	var all []*github.Organization
-	opt := &github.ListOptions{PerPage: maxPerPage}
-
-	for {
-		orgs, resp, err := client.Enterprise.ListAssignments(ctx, enterpriseSlug, enterpriseTeam, opt)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, orgs...)
-		if resp.NextPage == 0 {
-			break
-		}
-		opt.Page = resp.NextPage
-	}
-
-	return all, nil
 }

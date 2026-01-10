@@ -104,7 +104,16 @@ func resourceGithubEnterpriseTeamCreate(ctx context.Context, d *schema.ResourceD
 	}
 
 	d.SetId(strconv.FormatInt(te.ID, 10))
-	return resourceGithubEnterpriseTeamRead(context.WithValue(ctx, ctxId, d.Id()), d, meta)
+
+	// Set computed fields directly from API response
+	if err := d.Set("slug", te.Slug); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("team_id", int(te.ID)); err != nil {
+		return diag.FromErr(err)
+	}
+
+	return nil
 }
 
 func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
@@ -194,24 +203,7 @@ func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceDat
 func resourceGithubEnterpriseTeamUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
-
-	// We need a team slug for the API. If state is missing, re-discover it by ID.
-	teamSlug := strings.TrimSpace(d.Get("slug").(string))
-	if teamSlug == "" {
-		teamID, err := strconv.ParseInt(d.Id(), 10, 64)
-		if err != nil {
-			return diag.FromErr(unconvertibleIdErr(d.Id(), err))
-		}
-		ctx = context.WithValue(ctx, ctxId, d.Id())
-		te, err := findEnterpriseTeamByID(ctx, client, enterpriseSlug, teamID)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		if te == nil {
-			return diag.FromErr(fmt.Errorf("enterprise team %s no longer exists", d.Id()))
-		}
-		teamSlug = te.Slug
-	}
+	teamSlug := d.Get("slug").(string)
 
 	name := d.Get("name").(string)
 	description := d.Get("description").(string)
@@ -228,12 +220,17 @@ func resourceGithubEnterpriseTeamUpdate(ctx context.Context, d *schema.ResourceD
 	}
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
-	_, _, err := client.Enterprise.UpdateTeam(ctx, enterpriseSlug, teamSlug, req)
+	te, _, err := client.Enterprise.UpdateTeam(ctx, enterpriseSlug, teamSlug, req)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	return resourceGithubEnterpriseTeamRead(ctx, d, meta)
+	// Update slug in case it changed (e.g., team was renamed)
+	if err := d.Set("slug", te.Slug); err != nil {
+		return diag.FromErr(err)
+	}
+
+	return nil
 }
 
 func resourceGithubEnterpriseTeamDelete(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
@@ -258,14 +255,13 @@ func resourceGithubEnterpriseTeamDelete(ctx context.Context, d *schema.ResourceD
 	}
 
 	log.Printf("[INFO] Deleting enterprise team: %s/%s (%s)", enterpriseSlug, teamSlug, d.Id())
-	resp, err := client.Enterprise.DeleteTeam(ctx, enterpriseSlug, teamSlug)
+	_, err := client.Enterprise.DeleteTeam(ctx, enterpriseSlug, teamSlug)
 	if err != nil {
 		// Already gone? That's fine, we wanted it deleted anyway.
 		ghErr := &github.ErrorResponse{}
 		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
 			return nil
 		}
-		_ = resp
 		return diag.FromErr(err)
 	}
 
