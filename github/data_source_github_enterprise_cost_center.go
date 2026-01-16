@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -12,6 +11,7 @@ import (
 
 func dataSourceGithubEnterpriseCostCenter() *schema.Resource {
 	return &schema.Resource{
+		Description: "Use this data source to retrieve information about a specific enterprise cost center.",
 		ReadContext: dataSourceGithubEnterpriseCostCenterRead,
 
 		Schema: map[string]*schema.Schema{
@@ -58,22 +58,6 @@ func dataSourceGithubEnterpriseCostCenter() *schema.Resource {
 				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "The repositories (full name) assigned to this cost center.",
 			},
-			"resources": {
-				Type:     schema.TypeList,
-				Computed: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"type": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"name": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-					},
-				},
-			},
 		},
 	}
 }
@@ -82,8 +66,6 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
-
-	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
 
 	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -100,25 +82,13 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 	_ = d.Set("state", state)
 	_ = d.Set("azure_subscription", cc.GetAzureSubscription())
 
-	resources := make([]map[string]any, 0)
-	for _, r := range cc.Resources {
-		if r == nil {
-			continue
-		}
-		resources = append(resources, map[string]any{
-			"type": r.Type,
-			"name": r.Name,
-		})
-	}
-	_ = d.Set("resources", resources)
-
 	users, organizations, repositories := costCenterSplitResources(cc.Resources)
 	sort.Strings(users)
 	sort.Strings(organizations)
 	sort.Strings(repositories)
-	_ = d.Set("users", stringSliceToAnySlice(users))
-	_ = d.Set("organizations", stringSliceToAnySlice(organizations))
-	_ = d.Set("repositories", stringSliceToAnySlice(repositories))
+	_ = d.Set("users", flattenStringList(users))
+	_ = d.Set("organizations", flattenStringList(organizations))
+	_ = d.Set("repositories", flattenStringList(repositories))
 
 	return nil
 }

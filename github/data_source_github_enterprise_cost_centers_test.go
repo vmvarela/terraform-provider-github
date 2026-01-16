@@ -30,15 +30,16 @@ func TestAccGithubEnterpriseCostCentersDataSource(t *testing.T) {
 		}
 	`, testAccConf.enterpriseSlug, randomID)
 
-	check := resource.ComposeTestCheckFunc(
-		resource.TestCheckResourceAttr("data.github_enterprise_cost_centers.test", "state", "active"),
-		testAccCheckEnterpriseCostCentersListContains("github_enterprise_cost_center.test", "data.github_enterprise_cost_centers.test"),
-	)
-
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		PreCheck:          func() { skipUnlessEnterprise(t) },
 		ProviderFactories: providerFactories,
-		Steps:             []resource.TestStep{{Config: config, Check: check}},
+		Steps: []resource.TestStep{{
+			Config: config,
+			Check: resource.ComposeTestCheckFunc(
+				resource.TestCheckResourceAttr("data.github_enterprise_cost_centers.test", "state", "active"),
+				testAccCheckEnterpriseCostCentersListContains("github_enterprise_cost_center.test", "data.github_enterprise_cost_centers.test"),
+			),
+		}},
 	})
 }
 

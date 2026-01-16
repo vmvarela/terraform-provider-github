@@ -4,19 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/google/go-github/v81/github"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func resourceGithubEnterpriseCostCenter() *schema.Resource {
 	return &schema.Resource{
+		Description:   "Manages an enterprise cost center in GitHub.",
 		CreateContext: resourceGithubEnterpriseCostCenterCreate,
 		ReadContext:   resourceGithubEnterpriseCostCenterRead,
 		UpdateContext: resourceGithubEnterpriseCostCenterUpdate,
@@ -65,24 +67,6 @@ func resourceGithubEnterpriseCostCenter() *schema.Resource {
 				Computed:    true,
 				Description: "The Azure subscription associated with the cost center.",
 			},
-			"resources": {
-				Type:     schema.TypeList,
-				Computed: true,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"type": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "The resource type.",
-						},
-						"name": {
-							Type:        schema.TypeString,
-							Computed:    true,
-							Description: "The resource identifier (username, organization name, or repo full name).",
-						},
-					},
-				},
-			},
 		},
 	}
 }
@@ -92,8 +76,10 @@ func resourceGithubEnterpriseCostCenterCreate(ctx context.Context, d *schema.Res
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	name := d.Get("name").(string)
 
-	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, name))
-	log.Printf("[INFO] Creating enterprise cost center: %s (%s)", name, enterpriseSlug)
+	tflog.Info(ctx, "Creating enterprise cost center", map[string]any{
+		"enterprise_slug": enterpriseSlug,
+		"name":            name,
+	})
 
 	cc, _, err := client.Enterprise.CreateCostCenter(ctx, enterpriseSlug, github.CostCenterRequest{Name: name})
 	if err != nil {
@@ -101,23 +87,26 @@ func resourceGithubEnterpriseCostCenterCreate(ctx context.Context, d *schema.Res
 	}
 
 	if cc == nil || cc.ID == "" {
-		return diag.FromErr(fmt.Errorf("failed to create cost center: missing id in response"))
+		return diag.Errorf("failed to create cost center: missing id in response")
 	}
 
 	d.SetId(cc.ID)
 
 	if hasCostCenterAssignmentsConfigured(d) {
-		// Ensure we operate on fresh API state before mutations.
-		current, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, cc.ID)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		if diags := syncEnterpriseCostCenterAssignments(ctx, d, client, enterpriseSlug, cc.ID, current.Resources); diags.HasError() {
+		if diags := syncEnterpriseCostCenterAssignments(ctx, d, client, enterpriseSlug, cc.ID, nil); diags.HasError() {
 			return diags
 		}
 	}
 
-	return resourceGithubEnterpriseCostCenterRead(ctx, d, meta)
+	// Set computed fields from the API response
+	state := strings.ToLower(cc.GetState())
+	if state == "" {
+		state = "active"
+	}
+	_ = d.Set("state", state)
+	_ = d.Set("azure_subscription", cc.GetAzureSubscription())
+
+	return nil
 }
 
 func resourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
@@ -125,12 +114,13 @@ func resourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Resou
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Id()
 
-	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
-
 	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		if is404(err) {
-			// If the API starts returning 404 for archived cost centers, we remove it from state.
+			tflog.Warn(ctx, "Cost center not found, removing from state", map[string]any{
+				"enterprise_slug": enterpriseSlug,
+				"cost_center_id":  costCenterID,
+			})
 			d.SetId("")
 			return nil
 		}
@@ -146,25 +136,7 @@ func resourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Resou
 	_ = d.Set("state", state)
 	_ = d.Set("azure_subscription", cc.GetAzureSubscription())
 
-	resources := make([]map[string]any, 0)
-	for _, r := range cc.Resources {
-		if r == nil {
-			continue
-		}
-		resources = append(resources, map[string]any{
-			"type": r.Type,
-			"name": r.Name,
-		})
-	}
-	_ = d.Set("resources", resources)
-
-	users, organizations, repositories := costCenterSplitResources(cc.Resources)
-	sort.Strings(users)
-	sort.Strings(organizations)
-	sort.Strings(repositories)
-	_ = d.Set("users", stringSliceToAnySlice(users))
-	_ = d.Set("organizations", stringSliceToAnySlice(organizations))
-	_ = d.Set("repositories", stringSliceToAnySlice(repositories))
+	setCostCenterResourceFields(d, cc)
 
 	return nil
 }
@@ -174,37 +146,61 @@ func resourceGithubEnterpriseCostCenterUpdate(ctx context.Context, d *schema.Res
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Id()
 
-	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
+	// Check current state to prevent updates on archived cost centers
+	currentState := d.Get("state").(string)
+	if strings.EqualFold(currentState, "deleted") {
+		return diag.Errorf("cannot update cost center %q because it is archived", costCenterID)
+	}
 
-	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	if strings.EqualFold(cc.GetState(), "deleted") {
-		return diag.FromErr(fmt.Errorf("cannot update cost center %q because it is archived", costCenterID))
-	}
+	var updatedCC *github.CostCenter
 
 	if d.HasChange("name") {
 		name := d.Get("name").(string)
-		log.Printf("[INFO] Updating enterprise cost center: %s/%s", enterpriseSlug, costCenterID)
-		_, _, err := client.Enterprise.UpdateCostCenter(ctx, enterpriseSlug, costCenterID, github.CostCenterRequest{Name: name})
+		tflog.Info(ctx, "Updating enterprise cost center name", map[string]any{
+			"enterprise_slug": enterpriseSlug,
+			"cost_center_id":  costCenterID,
+			"name":            name,
+		})
+		cc, _, err := client.Enterprise.UpdateCostCenter(ctx, enterpriseSlug, costCenterID, github.CostCenterRequest{Name: name})
 		if err != nil {
 			return diag.FromErr(err)
 		}
-
-		cc, _, err = client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
-		if err != nil {
-			return diag.FromErr(err)
-		}
+		updatedCC = cc
 	}
 
 	if d.HasChange("users") || d.HasChange("organizations") || d.HasChange("repositories") {
-		if diags := syncEnterpriseCostCenterAssignments(ctx, d, client, enterpriseSlug, costCenterID, cc.Resources); diags.HasError() {
+		// Get current resources from API only if we need to sync assignments
+		var currentResources []*github.CostCenterResource
+		if updatedCC != nil {
+			currentResources = updatedCC.Resources
+		} else {
+			cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
+			if err != nil {
+				return diag.FromErr(err)
+			}
+			currentResources = cc.Resources
+		}
+		if diags := syncEnterpriseCostCenterAssignments(ctx, d, client, enterpriseSlug, costCenterID, currentResources); diags.HasError() {
 			return diags
 		}
 	}
 
-	return resourceGithubEnterpriseCostCenterRead(ctx, d, meta)
+	// Fetch final state to set computed fields
+	final, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	_ = d.Set("name", final.Name)
+	state := strings.ToLower(final.GetState())
+	if state == "" {
+		state = "active"
+	}
+	_ = d.Set("state", state)
+	_ = d.Set("azure_subscription", final.GetAzureSubscription())
+	setCostCenterResourceFields(d, final)
+
+	return nil
 }
 
 func resourceGithubEnterpriseCostCenterDelete(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
@@ -212,8 +208,10 @@ func resourceGithubEnterpriseCostCenterDelete(ctx context.Context, d *schema.Res
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Id()
 
-	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/%s", enterpriseSlug, costCenterID))
-	log.Printf("[INFO] Archiving enterprise cost center: %s/%s", enterpriseSlug, costCenterID)
+	tflog.Info(ctx, "Archiving enterprise cost center", map[string]any{
+		"enterprise_slug": enterpriseSlug,
+		"cost_center_id":  costCenterID,
+	})
 
 	_, _, err := client.Enterprise.DeleteCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -227,12 +225,11 @@ func resourceGithubEnterpriseCostCenterDelete(ctx context.Context, d *schema.Res
 }
 
 func resourceGithubEnterpriseCostCenterImport(ctx context.Context, d *schema.ResourceData, meta any) ([]*schema.ResourceData, error) {
-	parts := strings.Split(d.Id(), "/")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid import specified: supplied import must be written as <enterprise_slug>/<cost_center_id>")
+	enterpriseSlug, costCenterID, err := parseTwoPartID(d.Id(), "enterprise_slug", "cost_center_id")
+	if err != nil {
+		return nil, fmt.Errorf("invalid import ID %q: expected format <enterprise_slug>:<cost_center_id>", d.Id())
 	}
 
-	enterpriseSlug, costCenterID := parts[0], parts[1]
 	d.SetId(costCenterID)
 	_ = d.Set("enterprise_slug", enterpriseSlug)
 
@@ -250,97 +247,47 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 	toAddOrgs, toRemoveOrgs := diffStringSlices(currentOrgs, desiredOrgs)
 	toAddRepos, toRemoveRepos := diffStringSlices(currentRepos, desiredRepos)
 
-	const maxResourcesPerRequest = 50
-	const costCenterResourcesRetryTimeout = 5 * time.Minute
-
-	retryRemove := func(req github.CostCenterResourceRequest) diag.Diagnostics {
-		//nolint:staticcheck
-		err := resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
-			_, _, err := client.Enterprise.RemoveResourcesFromCostCenter(ctx, enterpriseSlug, costCenterID, req)
-			if err == nil {
-				return nil
-			}
-			if isRetryableGithubResponseError(err) {
-				//nolint:staticcheck
-				return resource.RetryableError(err)
-			}
-			//nolint:staticcheck
-			return resource.NonRetryableError(err)
-		})
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		return nil
-	}
-
-	retryAssign := func(req github.CostCenterResourceRequest) diag.Diagnostics {
-		//nolint:staticcheck
-		err := resource.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *resource.RetryError {
-			_, _, err := client.Enterprise.AddResourcesToCostCenter(ctx, enterpriseSlug, costCenterID, req)
-			if err == nil {
-				return nil
-			}
-			if isRetryableGithubResponseError(err) {
-				//nolint:staticcheck
-				return resource.RetryableError(err)
-			}
-			//nolint:staticcheck
-			return resource.NonRetryableError(err)
-		})
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		return nil
-	}
-
-	chunk := func(items []string) [][]string {
-		if len(items) == 0 {
-			return nil
-		}
-		const size = maxResourcesPerRequest
-		chunks := make([][]string, 0, (len(items)+size-1)/size)
-		for start := 0; start < len(items); start += size {
-			end := min(start+size, len(items))
-			chunks = append(chunks, items[start:end])
-		}
-		return chunks
-	}
-
 	if len(toRemoveUsers)+len(toRemoveOrgs)+len(toRemoveRepos) > 0 {
-		log.Printf("[INFO] Removing enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
+		tflog.Info(ctx, "Removing enterprise cost center resources", map[string]any{
+			"enterprise_slug": enterpriseSlug,
+			"cost_center_id":  costCenterID,
+		})
 
-		for _, batch := range chunk(toRemoveUsers) {
-			if diags := retryRemove(github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
+		for _, batch := range chunkStringSlice(toRemoveUsers, maxResourcesPerRequest) {
+			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunk(toRemoveOrgs) {
-			if diags := retryRemove(github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
+		for _, batch := range chunkStringSlice(toRemoveOrgs, maxResourcesPerRequest) {
+			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunk(toRemoveRepos) {
-			if diags := retryRemove(github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
+		for _, batch := range chunkStringSlice(toRemoveRepos, maxResourcesPerRequest) {
+			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
 		}
 	}
 
 	if len(toAddUsers)+len(toAddOrgs)+len(toAddRepos) > 0 {
-		log.Printf("[INFO] Assigning enterprise cost center resources: %s/%s", enterpriseSlug, costCenterID)
+		tflog.Info(ctx, "Assigning enterprise cost center resources", map[string]any{
+			"enterprise_slug": enterpriseSlug,
+			"cost_center_id":  costCenterID,
+		})
 
-		for _, batch := range chunk(toAddUsers) {
-			if diags := retryAssign(github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
+		for _, batch := range chunkStringSlice(toAddUsers, maxResourcesPerRequest) {
+			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunk(toAddOrgs) {
-			if diags := retryAssign(github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
+		for _, batch := range chunkStringSlice(toAddOrgs, maxResourcesPerRequest) {
+			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunk(toAddRepos) {
-			if diags := retryAssign(github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
+		for _, batch := range chunkStringSlice(toAddRepos, maxResourcesPerRequest) {
+			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
 		}
@@ -390,8 +337,8 @@ func getStringSetOrEmpty(d *schema.ResourceData, key string) *schema.Set {
 }
 
 func diffStringSlices(current, desired []string) (toAdd, toRemove []string) {
-	cur := schema.NewSet(schema.HashString, stringSliceToAnySlice(current))
-	des := schema.NewSet(schema.HashString, stringSliceToAnySlice(desired))
+	cur := schema.NewSet(schema.HashString, flattenStringList(current))
+	des := schema.NewSet(schema.HashString, flattenStringList(desired))
 
 	for _, v := range des.Difference(cur).List() {
 		toAdd = append(toAdd, v.(string))
@@ -409,7 +356,7 @@ func isRetryableGithubResponseError(err error) bool {
 	var ghErr *github.ErrorResponse
 	if errors.As(err, &ghErr) && ghErr.Response != nil {
 		switch ghErr.Response.StatusCode {
-		case 404, 409, 500, 502, 503, 504:
+		case http.StatusConflict, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 			return true
 		default:
 			return false
@@ -435,18 +382,70 @@ func costCenterSplitResources(resources []*github.CostCenterResource) (users, or
 	return users, organizations, repositories
 }
 
-func stringSliceToAnySlice(v []string) []any {
-	out := make([]any, 0, len(v))
-	for _, s := range v {
-		out = append(out, s)
-	}
-	return out
+// setCostCenterResourceFields sets the resource-related fields on the schema.ResourceData.
+func setCostCenterResourceFields(d *schema.ResourceData, cc *github.CostCenter) {
+	users, organizations, repositories := costCenterSplitResources(cc.Resources)
+	sort.Strings(users)
+	sort.Strings(organizations)
+	sort.Strings(repositories)
+	_ = d.Set("users", flattenStringList(users))
+	_ = d.Set("organizations", flattenStringList(organizations))
+	_ = d.Set("repositories", flattenStringList(repositories))
 }
 
-func is404(err error) bool {
-	var ghErr *github.ErrorResponse
-	if errors.As(err, &ghErr) && ghErr.Response != nil {
-		return ghErr.Response.StatusCode == 404
+// Cost center resource management constants and retry functions.
+const (
+	maxResourcesPerRequest          = 50
+	costCenterResourcesRetryTimeout = 5 * time.Minute
+)
+
+// chunkStringSlice splits a slice into chunks of the given size.
+func chunkStringSlice(items []string, size int) [][]string {
+	if len(items) == 0 {
+		return nil
 	}
-	return false
+	chunks := make([][]string, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := min(start+size, len(items))
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
+}
+
+// retryCostCenterRemoveResources removes resources from a cost center with retry logic.
+// Uses retry.RetryContext for exponential backoff on transient errors.
+func retryCostCenterRemoveResources(ctx context.Context, client *github.Client, enterpriseSlug, costCenterID string, req github.CostCenterResourceRequest) diag.Diagnostics {
+	err := retry.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *retry.RetryError {
+		_, _, err := client.Enterprise.RemoveResourcesFromCostCenter(ctx, enterpriseSlug, costCenterID, req)
+		if err == nil {
+			return nil
+		}
+		if isRetryableGithubResponseError(err) {
+			return retry.RetryableError(err)
+		}
+		return retry.NonRetryableError(err)
+	})
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	return nil
+}
+
+// retryCostCenterAddResources adds resources to a cost center with retry logic.
+// Uses retry.RetryContext for exponential backoff on transient errors.
+func retryCostCenterAddResources(ctx context.Context, client *github.Client, enterpriseSlug, costCenterID string, req github.CostCenterResourceRequest) diag.Diagnostics {
+	err := retry.RetryContext(ctx, costCenterResourcesRetryTimeout, func() *retry.RetryError {
+		_, _, err := client.Enterprise.AddResourcesToCostCenter(ctx, enterpriseSlug, costCenterID, req)
+		if err == nil {
+			return nil
+		}
+		if isRetryableGithubResponseError(err) {
+			return retry.RetryableError(err)
+		}
+		return retry.NonRetryableError(err)
+	})
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	return nil
 }

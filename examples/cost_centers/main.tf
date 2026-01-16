@@ -9,6 +9,7 @@ terraform {
 
 provider "github" {
   token = var.github_token
+  owner = var.enterprise_slug
 }
 
 variable "github_token" {

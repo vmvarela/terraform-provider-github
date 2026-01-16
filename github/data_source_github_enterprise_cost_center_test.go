@@ -2,7 +2,7 @@ package github
 
 import (
 	"fmt"
-	"os"
+	"strconv"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
@@ -12,26 +12,25 @@ import (
 func TestAccGithubEnterpriseCostCenterDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	testEnterpriseCostCenterOrganization := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
-	testEnterpriseCostCenterRepository := os.Getenv("ENTERPRISE_TEST_REPOSITORY")
-	testEnterpriseCostCenterUsers := os.Getenv("ENTERPRISE_TEST_USERS")
-
-	if testEnterpriseCostCenterOrganization == "" {
+	if testAccConf.enterpriseCostCenterOrg == "" {
 		t.Skip("Skipping because `ENTERPRISE_TEST_ORGANIZATION` is not set")
 	}
-	if testEnterpriseCostCenterRepository == "" {
+	if testAccConf.enterpriseCostCenterRepo == "" {
 		t.Skip("Skipping because `ENTERPRISE_TEST_REPOSITORY` is not set")
 	}
-	if testEnterpriseCostCenterUsers == "" {
+	if testAccConf.enterpriseCostCenterUsers == "" {
 		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` is not set")
 	}
 
-	users := splitCommaSeparated(testEnterpriseCostCenterUsers)
+	users := splitCommaSeparated(testAccConf.enterpriseCostCenterUsers)
 	if len(users) == 0 {
 		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` must contain at least one username")
 	}
 
 	userList := fmt.Sprintf("%q", users[0])
+	usersInConfig := []string{users[0]}
+	orgsInConfig := []string{testAccConf.enterpriseCostCenterOrg}
+	reposInConfig := []string{testAccConf.enterpriseCostCenterRepo}
 
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -51,23 +50,24 @@ func TestAccGithubEnterpriseCostCenterDataSource(t *testing.T) {
 			enterprise_slug = data.github_enterprise.enterprise.slug
 			cost_center_id  = github_enterprise_cost_center.test.id
 		}
-	`, testAccConf.enterpriseSlug, randomID, userList, testEnterpriseCostCenterOrganization, testEnterpriseCostCenterRepository)
-
-	check := resource.ComposeTestCheckFunc(
-		resource.TestCheckResourceAttrPair("data.github_enterprise_cost_center.test", "cost_center_id", "github_enterprise_cost_center.test", "id"),
-		resource.TestCheckResourceAttrPair("data.github_enterprise_cost_center.test", "name", "github_enterprise_cost_center.test", "name"),
-		resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "state", "active"),
-		resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "organizations.#", "1"),
-		resource.TestCheckTypeSetElemAttr("data.github_enterprise_cost_center.test", "organizations.*", testEnterpriseCostCenterOrganization),
-		resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "repositories.#", "1"),
-		resource.TestCheckTypeSetElemAttr("data.github_enterprise_cost_center.test", "repositories.*", testEnterpriseCostCenterRepository),
-		resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "users.#", "1"),
-		resource.TestCheckTypeSetElemAttr("data.github_enterprise_cost_center.test", "users.*", users[0]),
-	)
+	`, testAccConf.enterpriseSlug, randomID, userList, testAccConf.enterpriseCostCenterOrg, testAccConf.enterpriseCostCenterRepo)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:          func() { skipUnlessMode(t, enterprise) },
+		PreCheck:          func() { skipUnlessEnterprise(t) },
 		ProviderFactories: providerFactories,
-		Steps:             []resource.TestStep{{Config: config, Check: check}},
+		Steps: []resource.TestStep{{
+			Config: config,
+			Check: resource.ComposeTestCheckFunc(
+				resource.TestCheckResourceAttrPair("data.github_enterprise_cost_center.test", "cost_center_id", "github_enterprise_cost_center.test", "id"),
+				resource.TestCheckResourceAttrPair("data.github_enterprise_cost_center.test", "name", "github_enterprise_cost_center.test", "name"),
+				resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "state", "active"),
+				resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "organizations.#", strconv.Itoa(len(orgsInConfig))),
+				resource.TestCheckTypeSetElemAttr("data.github_enterprise_cost_center.test", "organizations.*", testAccConf.enterpriseCostCenterOrg),
+				resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "repositories.#", strconv.Itoa(len(reposInConfig))),
+				resource.TestCheckTypeSetElemAttr("data.github_enterprise_cost_center.test", "repositories.*", testAccConf.enterpriseCostCenterRepo),
+				resource.TestCheckResourceAttr("data.github_enterprise_cost_center.test", "users.#", strconv.Itoa(len(usersInConfig))),
+				resource.TestCheckTypeSetElemAttr("data.github_enterprise_cost_center.test", "users.*", users[0]),
+			),
+		}},
 	})
 }
