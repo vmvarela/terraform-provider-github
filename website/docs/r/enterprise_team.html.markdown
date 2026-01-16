@@ -1,8 +1,8 @@
 ---
 layout: "github"
-page_title: "Github: github_enterprise_team"
+page_title: "GitHub: github_enterprise_team"
 description: |-
-  Create and manages a GitHub enterprise team.
+  Creates and manages a GitHub enterprise team.
 ---
 
 # github_enterprise_team

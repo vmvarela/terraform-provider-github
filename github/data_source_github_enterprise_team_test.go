@@ -55,6 +55,10 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
+	if testAccConf.enterpriseTestOrganization == "" {
+		t.Skip("Skipping because `ENTERPRISE_TEST_ORGANIZATION` is not set")
+	}
+
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
 			slug = "%s"
@@ -77,7 +81,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 			team_slug       = github_enterprise_team.test.slug
 			depends_on      = [github_enterprise_team_organizations.assign]
 		}
-	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.owner)
+	`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.enterpriseTestOrganization)
 
 	resource.Test(t, resource.TestCase{
 		PreCheck:          func() { skipUnlessMode(t, enterprise) },
@@ -88,7 +92,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.github_enterprise_team_organizations.test", "id"),
 					resource.TestCheckResourceAttr("data.github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
-					resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
+					resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.enterpriseTestOrganization),
 				),
 			},
 		},
@@ -97,7 +101,16 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 
 func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
-	username := testAccConf.username
+
+	if testAccConf.enterpriseTestUsers == "" {
+		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` is not set")
+	}
+
+	users := splitCommaSeparated(testAccConf.enterpriseTestUsers)
+	if len(users) == 0 {
+		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` must contain at least one username")
+	}
+	username := users[0]
 
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
