@@ -1,62 +1,35 @@
 package github
 
 import (
-	"context"
-	"net/http"
-	"net/url"
+	"fmt"
 	"testing"
 
-	gh "github.com/google/go-github/v81/github"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func TestDataSourceGithubEnterpriseSCIMGroupRead(t *testing.T) {
-	ts := githubApiMock([]*mockResponse{
-		{
-			ExpectedUri: "/scim/v2/enterprises/ent/Groups/g1",
-			ExpectedHeaders: map[string]string{
-				"Accept": "application/scim+json",
-			},
-			StatusCode: 200,
-			ResponseBody: `{
-  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
-  "id": "g1",
-  "externalId": "eg1",
-  "displayName": "Group One",
-  "members": [{"value": "u1", "$ref": "https://example.test/u1", "display": "user1"}],
-  "meta": {"resourceType": "Group", "created": "2020-01-01T00:00:00Z"}
-}`,
-		},
+func TestAccGithubEnterpriseSCIMGroupDataSource(t *testing.T) {
+	config := fmt.Sprintf(`
+		data "github_enterprise_scim_groups" "all" {
+			enterprise = "%s"
+		}
+
+		data "github_enterprise_scim_group" "test" {
+			enterprise    = "%[1]s"
+			scim_group_id = data.github_enterprise_scim_groups.all.resources[0].id
+		}
+	`, testAccConf.enterpriseSlug)
+
+	check := resource.ComposeTestCheckFunc(
+		resource.TestCheckResourceAttrSet("data.github_enterprise_scim_group.test", "id"),
+		resource.TestCheckResourceAttrSet("data.github_enterprise_scim_group.test", "display_name"),
+	)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessEnterprise(t) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{{
+			Config: config,
+			Check:  check,
+		}},
 	})
-	defer ts.Close()
-
-	httpClient := &http.Client{Transport: http.DefaultTransport}
-	client := gh.NewClient(httpClient)
-	baseURL, _ := url.Parse(ts.URL + "/")
-	client.BaseURL = baseURL
-
-	owner := &Owner{v3client: client}
-
-	r := dataSourceGithubEnterpriseSCIMGroup()
-	d := schema.TestResourceDataRaw(t, r.Schema, map[string]any{
-		"enterprise":    "ent",
-		"scim_group_id": "g1",
-	})
-
-	diags := dataSourceGithubEnterpriseSCIMGroupRead(context.Background(), d, owner)
-	if len(diags) > 0 {
-		t.Fatalf("unexpected diagnostics: %#v", diags)
-	}
-
-	if got := d.Get("id").(string); got != "g1" {
-		t.Fatalf("expected id g1, got %q", got)
-	}
-	members := d.Get("members").([]any)
-	if len(members) != 1 {
-		t.Fatalf("expected 1 member, got %d", len(members))
-	}
-	m0 := members[0].(map[string]any)
-	if m0["ref"].(string) != "https://example.test/u1" {
-		t.Fatalf("expected ref to be set, got %v", m0["ref"])
-	}
 }

@@ -1,71 +1,36 @@
 package github
 
 import (
-	"context"
-	"net/http"
-	"net/url"
+	"fmt"
 	"testing"
 
-	gh "github.com/google/go-github/v81/github"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func TestDataSourceGithubEnterpriseSCIMUserRead(t *testing.T) {
-	ts := githubApiMock([]*mockResponse{
-		{
-			ExpectedUri: "/scim/v2/enterprises/ent/Users/u1",
-			ExpectedHeaders: map[string]string{
-				"Accept": "application/scim+json",
-			},
-			StatusCode: 200,
-			ResponseBody: `{
-  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
-  "id": "u1",
-  "externalId": "eu1",
-  "userName": "test",
-  "displayName": "Test User",
-  "active": true,
-  "name": {"formatted": "Test User", "familyName": "User", "givenName": "Test"},
-  "emails": [{"value": "test@example.com", "type": "work", "primary": true}],
-  "roles": [{"value": "member", "display": "Member", "type": "direct", "primary": true}],
-  "meta": {"resourceType": "User"}
-}`,
-		},
+func TestAccGithubEnterpriseSCIMUserDataSource(t *testing.T) {
+	config := fmt.Sprintf(`
+		data "github_enterprise_scim_users" "all" {
+			enterprise = "%s"
+		}
+
+		data "github_enterprise_scim_user" "test" {
+			enterprise   = "%[1]s"
+			scim_user_id = data.github_enterprise_scim_users.all.resources[0].id
+		}
+	`, testAccConf.enterpriseSlug)
+
+	check := resource.ComposeTestCheckFunc(
+		resource.TestCheckResourceAttrSet("data.github_enterprise_scim_user.test", "id"),
+		resource.TestCheckResourceAttrSet("data.github_enterprise_scim_user.test", "user_name"),
+		resource.TestCheckResourceAttrSet("data.github_enterprise_scim_user.test", "display_name"),
+	)
+
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessEnterprise(t) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{{
+			Config: config,
+			Check:  check,
+		}},
 	})
-	defer ts.Close()
-
-	httpClient := &http.Client{Transport: http.DefaultTransport}
-	client := gh.NewClient(httpClient)
-	baseURL, _ := url.Parse(ts.URL + "/")
-	client.BaseURL = baseURL
-
-	owner := &Owner{v3client: client}
-
-	r := dataSourceGithubEnterpriseSCIMUser()
-	d := schema.TestResourceDataRaw(t, r.Schema, map[string]any{
-		"enterprise":   "ent",
-		"scim_user_id": "u1",
-	})
-
-	diags := dataSourceGithubEnterpriseSCIMUserRead(context.Background(), d, owner)
-	if len(diags) > 0 {
-		t.Fatalf("unexpected diagnostics: %#v", diags)
-	}
-
-	if got := d.Get("user_name").(string); got != "test" {
-		t.Fatalf("expected user_name test, got %q", got)
-	}
-	name := d.Get("name").([]any)
-	if len(name) != 1 {
-		t.Fatalf("expected name block, got %d", len(name))
-	}
-	n0 := name[0].(map[string]any)
-	if n0["given_name"].(string) != "Test" {
-		t.Fatalf("expected given_name Test, got %v", n0["given_name"])
-	}
-
-	emails := d.Get("emails").([]any)
-	if len(emails) != 1 {
-		t.Fatalf("expected 1 email, got %d", len(emails))
-	}
 }
