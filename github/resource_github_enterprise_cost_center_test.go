@@ -2,7 +2,6 @@ package github
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
@@ -13,23 +12,21 @@ import (
 func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	if testAccConf.enterpriseCostCenterOrg == "" {
-		t.Skip("Skipping because `ENTERPRISE_TEST_ORGANIZATION` is not set")
+	if testAccConf.owner == "" {
+		t.Skip("Skipping because `GITHUB_OWNER` is not set")
 	}
-	if testAccConf.enterpriseCostCenterRepo == "" {
-		t.Skip("Skipping because `ENTERPRISE_TEST_REPOSITORY` is not set")
+	if testAccConf.testOrgRepository == "" {
+		t.Skip("Skipping because `GH_TEST_ORG_REPOSITORY` is not set")
 	}
-	if testAccConf.enterpriseCostCenterUsers == "" {
-		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` is not set")
-	}
-
-	users := splitCommaSeparated(testAccConf.enterpriseCostCenterUsers)
-	if len(users) < 2 {
-		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` must contain at least two usernames")
+	if testAccConf.testOrgUser == "" {
+		t.Skip("Skipping because `GH_TEST_ORG_USER` is not set")
 	}
 
-	usersBefore := fmt.Sprintf("%q, %q", users[0], users[1])
-	usersAfter := fmt.Sprintf("%q", users[0])
+	// Use testOrgUser and username for testing with two users
+	user1 := testAccConf.testOrgUser
+	user2 := testAccConf.username
+	org := testAccConf.owner
+	repo := testAccConf.testOrgRepository
 
 	configBefore := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -40,11 +37,11 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 			enterprise_slug = data.github_enterprise.enterprise.slug
 			name            = "tf-acc-test-%s"
 
-			users         = [%s]
+			users         = [%q, %q]
 			organizations = [%q]
 			repositories  = [%q]
 		}
-	`, testAccConf.enterpriseSlug, randomID, usersBefore, testAccConf.enterpriseCostCenterOrg, testAccConf.enterpriseCostCenterRepo)
+	`, testAccConf.enterpriseSlug, randomID, user1, user2, org, repo)
 
 	configAfter := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -55,11 +52,11 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 			enterprise_slug = data.github_enterprise.enterprise.slug
 			name            = "tf-acc-test-updated-%s"
 
-			users         = [%s]
+			users         = [%q]
 			organizations = []
 			repositories  = []
 		}
-	`, testAccConf.enterpriseSlug, randomID, usersAfter)
+	`, testAccConf.enterpriseSlug, randomID, user1)
 
 	configEmpty := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -81,12 +78,12 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "name", fmt.Sprintf("tf-acc-test-%s", randomID)),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "state", "active"),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "organizations.#", "1"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "organizations.*", testAccConf.enterpriseCostCenterOrg),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "organizations.*", org),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "repositories.#", "1"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "repositories.*", testAccConf.enterpriseCostCenterRepo),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "repositories.*", repo),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "users.#", "2"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", users[0]),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", users[1]),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", user1),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", user2),
 	)
 
 	checkAfter := resource.ComposeTestCheckFunc(
@@ -95,7 +92,7 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "organizations.#", "0"),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "repositories.#", "0"),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "users.#", "1"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", users[0]),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", user1),
 	)
 
 	checkEmpty := resource.ComposeTestCheckFunc(
@@ -134,17 +131,4 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 			},
 		},
 	})
-}
-
-func splitCommaSeparated(v string) []string {
-	parts := strings.Split(v, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
 }

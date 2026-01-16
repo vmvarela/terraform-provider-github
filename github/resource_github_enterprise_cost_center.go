@@ -253,17 +253,17 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 			"cost_center_id":  costCenterID,
 		})
 
-		for _, batch := range chunkStringSlice(toRemoveUsers, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toRemoveUsers) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunkStringSlice(toRemoveOrgs, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toRemoveOrgs) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunkStringSlice(toRemoveRepos, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toRemoveRepos) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
@@ -276,17 +276,17 @@ func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.Resource
 			"cost_center_id":  costCenterID,
 		})
 
-		for _, batch := range chunkStringSlice(toAddUsers, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toAddUsers) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunkStringSlice(toAddOrgs, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toAddOrgs) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunkStringSlice(toAddRepos, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toAddRepos) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
@@ -399,14 +399,14 @@ const (
 	costCenterResourcesRetryTimeout = 5 * time.Minute
 )
 
-// chunkStringSlice splits a slice into chunks of the given size.
-func chunkStringSlice(items []string, size int) [][]string {
+// chunkStringSlice splits a slice into chunks of the max resources per request.
+func chunkStringSlice(items []string) [][]string {
 	if len(items) == 0 {
 		return nil
 	}
-	chunks := make([][]string, 0, (len(items)+size-1)/size)
-	for start := 0; start < len(items); start += size {
-		end := min(start+size, len(items))
+	chunks := make([][]string, 0, (len(items)+maxResourcesPerRequest-1)/maxResourcesPerRequest)
+	for start := 0; start < len(items); start += maxResourcesPerRequest {
+		end := min(start+maxResourcesPerRequest, len(items))
 		chunks = append(chunks, items[start:end])
 	}
 	return chunks

@@ -43,10 +43,7 @@ type testAccConfig struct {
 	token    string
 
 	// Enterprise configuration
-	enterpriseSlug            string
-	enterpriseCostCenterOrg   string
-	enterpriseCostCenterRepo  string
-	enterpriseCostCenterUsers string
+	enterpriseSlug string
 
 	// Global test configuration
 	testPublicRepository              string
@@ -152,11 +149,6 @@ func TestMain(m *testing.M) {
 			fmt.Println("GITHUB_ENTERPRISE_SLUG environment variable not set")
 			os.Exit(1)
 		}
-
-		// Optional enterprise cost center test configuration
-		config.enterpriseCostCenterOrg = os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
-		config.enterpriseCostCenterRepo = os.Getenv("ENTERPRISE_TEST_REPOSITORY")
-		config.enterpriseCostCenterUsers = os.Getenv("ENTERPRISE_TEST_USERS")
 	}
 
 	i, err := strconv.Atoi(os.Getenv("GH_TEST_ORG_APP_INSTALLATION_ID"))
