@@ -11,7 +11,7 @@ Use this data source to retrieve SCIM users provisioned for a GitHub enterprise.
 
 ## Example Usage
 
-```
+```hcl
 data "github_enterprise_scim_users" "example" {
   enterprise = "example-co"
 }
@@ -21,7 +21,6 @@ data "github_enterprise_scim_users" "example" {
 
 * `enterprise` - (Required) The enterprise slug.
 * `filter` - (Optional) SCIM filter string.
-* `excluded_attributes` - (Optional) SCIM `excludedAttributes` query parameter.
 * `results_per_page` - (Optional) Page size used while auto-fetching all pages (mapped to SCIM `count`).
 
 ### Notes on `filter`
@@ -37,11 +36,11 @@ GitHub supports **only one** filter expression and only for these attributes on 
 
 Examples:
 
-```
+```hcl
 filter = "userName eq \"E012345\""
 ```
 
-```
+```hcl
 filter = "externalId eq \"9138790-10932-109120392-12321\""
 ```
 
