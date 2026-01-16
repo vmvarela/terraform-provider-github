@@ -30,7 +30,4 @@ data "github_enterprise_cost_centers" "active" {
   * `name` - The name of the cost center.
   * `state` - The state of the cost center.
   * `azure_subscription` - The Azure subscription associated with the cost center.
-  * `resources` - A list of assigned resources.
-    * `type` - The resource type.
-    * `name` - The resource identifier (username, organization login, or repository full name).
 

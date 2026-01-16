@@ -2,7 +2,6 @@ package github
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -14,21 +13,17 @@ import (
 func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	testEnterpriseCostCenterOrganization := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
-	testEnterpriseCostCenterRepository := os.Getenv("ENTERPRISE_TEST_REPOSITORY")
-	testEnterpriseCostCenterUsers := os.Getenv("ENTERPRISE_TEST_USERS")
-
-	if testEnterpriseCostCenterOrganization == "" {
+	if testAccConf.enterpriseCostCenterOrg == "" {
 		t.Skip("Skipping because `ENTERPRISE_TEST_ORGANIZATION` is not set")
 	}
-	if testEnterpriseCostCenterRepository == "" {
+	if testAccConf.enterpriseCostCenterRepo == "" {
 		t.Skip("Skipping because `ENTERPRISE_TEST_REPOSITORY` is not set")
 	}
-	if testEnterpriseCostCenterUsers == "" {
+	if testAccConf.enterpriseCostCenterUsers == "" {
 		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` is not set")
 	}
 
-	users := splitCommaSeparated(testEnterpriseCostCenterUsers)
+	users := splitCommaSeparated(testAccConf.enterpriseCostCenterUsers)
 	if len(users) < 2 {
 		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` must contain at least two usernames")
 	}
@@ -49,7 +44,7 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 			organizations = [%q]
 			repositories  = [%q]
 		}
-	`, testAccConf.enterpriseSlug, randomID, usersBefore, testEnterpriseCostCenterOrganization, testEnterpriseCostCenterRepository)
+	`, testAccConf.enterpriseSlug, randomID, usersBefore, testAccConf.enterpriseCostCenterOrg, testAccConf.enterpriseCostCenterRepo)
 
 	configAfter := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
@@ -86,9 +81,9 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "name", fmt.Sprintf("tf-acc-test-%s", randomID)),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "state", "active"),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "organizations.#", "1"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "organizations.*", testEnterpriseCostCenterOrganization),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "organizations.*", testAccConf.enterpriseCostCenterOrg),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "repositories.#", "1"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "repositories.*", testEnterpriseCostCenterRepository),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "repositories.*", testAccConf.enterpriseCostCenterRepo),
 		resource.TestCheckResourceAttr("github_enterprise_cost_center.test", "users.#", "2"),
 		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", users[0]),
 		resource.TestCheckTypeSetElemAttr("github_enterprise_cost_center.test", "users.*", users[1]),
@@ -110,8 +105,8 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 	)
 
 	resource.Test(t, resource.TestCase{
-		PreCheck:  func() { skipUnlessMode(t, enterprise) },
-		Providers: testAccProviders,
+		PreCheck:          func() { skipUnlessEnterprise(t) },
+		ProviderFactories: providerFactories,
 		Steps: []resource.TestStep{
 			{
 				Config: configBefore,
@@ -134,7 +129,7 @@ func TestAccGithubEnterpriseCostCenter(t *testing.T) {
 					if !ok {
 						return "", fmt.Errorf("resource not found in state")
 					}
-					return fmt.Sprintf("%s/%s", testAccConf.enterpriseSlug, rs.Primary.ID), nil
+					return fmt.Sprintf("%s:%s", testAccConf.enterpriseSlug, rs.Primary.ID), nil
 				},
 			},
 		},

@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/google/go-github/v81/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -12,6 +11,7 @@ import (
 
 func dataSourceGithubEnterpriseCostCenters() *schema.Resource {
 	return &schema.Resource{
+		Description: "Use this data source to retrieve a list of enterprise cost centers.",
 		ReadContext: dataSourceGithubEnterpriseCostCentersRead,
 
 		Schema: map[string]*schema.Schema{
@@ -27,35 +27,30 @@ func dataSourceGithubEnterpriseCostCenters() *schema.Resource {
 				Description:      "Filter cost centers by state.",
 			},
 			"cost_centers": {
-				Type:     schema.TypeSet,
-				Computed: true,
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Description: "The list of cost centers.",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"id": {
-							Type:     schema.TypeString,
-							Computed: true,
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "The cost center ID.",
 						},
 						"name": {
-							Type:     schema.TypeString,
-							Computed: true,
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "The name of the cost center.",
 						},
 						"state": {
-							Type:     schema.TypeString,
-							Computed: true,
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "The state of the cost center.",
 						},
 						"azure_subscription": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"resources": {
-							Type:     schema.TypeList,
-							Computed: true,
-							Elem: &schema.Resource{
-								Schema: map[string]*schema.Schema{
-									"type": {Type: schema.TypeString, Computed: true},
-									"name": {Type: schema.TypeString, Computed: true},
-								},
-							},
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: "The Azure subscription associated with the cost center.",
 						},
 					},
 				},
@@ -73,7 +68,6 @@ func dataSourceGithubEnterpriseCostCentersRead(ctx context.Context, d *schema.Re
 		state = &s
 	}
 
-	ctx = context.WithValue(ctx, ctxId, fmt.Sprintf("%s/cost-centers", enterpriseSlug))
 	result, _, err := client.Enterprise.ListCostCenters(ctx, enterpriseSlug, &github.ListCostCenterOptions{State: state})
 	if err != nil {
 		return diag.FromErr(err)
@@ -84,19 +78,11 @@ func dataSourceGithubEnterpriseCostCentersRead(ctx context.Context, d *schema.Re
 		if cc == nil {
 			continue
 		}
-		resources := make([]map[string]any, 0)
-		for _, r := range cc.Resources {
-			if r == nil {
-				continue
-			}
-			resources = append(resources, map[string]any{"type": r.Type, "name": r.Name})
-		}
 		items = append(items, map[string]any{
 			"id":                 cc.ID,
 			"name":               cc.Name,
 			"state":              cc.GetState(),
 			"azure_subscription": cc.GetAzureSubscription(),
-			"resources":          resources,
 		})
 	}
 
@@ -104,7 +90,7 @@ func dataSourceGithubEnterpriseCostCentersRead(ctx context.Context, d *schema.Re
 	if state != nil {
 		stateStr = *state
 	}
-	d.SetId(fmt.Sprintf("%s/%s", enterpriseSlug, stateStr))
+	d.SetId(buildTwoPartID(enterpriseSlug, stateStr))
 	_ = d.Set("cost_centers", items)
 	return nil
 }

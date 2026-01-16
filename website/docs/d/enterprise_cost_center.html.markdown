@@ -28,9 +28,6 @@ data "github_enterprise_cost_center" "example" {
 * `name` - The name of the cost center.
 * `state` - The state of the cost center.
 * `azure_subscription` - The Azure subscription associated with the cost center.
-* `resources` - A list of assigned resources.
-  * `type` - The resource type.
-  * `name` - The resource identifier (username, organization login, or repository full name).
 * `users` - The usernames currently assigned to the cost center.
 * `organizations` - The organization logins currently assigned to the cost center.
 * `repositories` - The repositories currently assigned to the cost center.
