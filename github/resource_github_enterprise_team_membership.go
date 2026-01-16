@@ -114,6 +114,20 @@ func resourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema.R
 	if err != nil {
 		return diag.FromErr(err)
 	}
+	if v, ok := d.GetOk("team_id"); ok {
+		teamID := int64(v.(int))
+		if teamID > 0 {
+			team, findErr := findEnterpriseTeamByID(ctx, client, enterpriseSlug, teamID)
+			if findErr != nil {
+				return diag.FromErr(findErr)
+			}
+			if team == nil {
+				d.SetId("")
+				return nil
+			}
+			teamSlug = team.Slug
+		}
+	}
 
 	// Get the membership using the SDK
 	user, resp, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, teamSlug, username)
@@ -157,6 +171,19 @@ func resourceGithubEnterpriseTeamMembershipDelete(ctx context.Context, d *schema
 	enterpriseSlug, teamSlug, username, err := parseEnterpriseTeamMembershipID(d.Id())
 	if err != nil {
 		return diag.FromErr(err)
+	}
+	if v, ok := d.GetOk("team_id"); ok {
+		teamID := int64(v.(int))
+		if teamID > 0 {
+			team, findErr := findEnterpriseTeamByID(ctx, client, enterpriseSlug, teamID)
+			if findErr != nil {
+				return diag.FromErr(findErr)
+			}
+			if team == nil {
+				return nil
+			}
+			teamSlug = team.Slug
+		}
 	}
 
 	// Remove the user from the team using the SDK

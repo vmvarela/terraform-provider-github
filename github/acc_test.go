@@ -43,7 +43,9 @@ type testAccConfig struct {
 	token    string
 
 	// Enterprise configuration
-	enterpriseSlug string
+	enterpriseSlug             string
+	enterpriseTestOrganization string
+	enterpriseTestUsers        string
 
 	// Global test configuration
 	testPublicRepository              string
@@ -144,6 +146,8 @@ func TestMain(m *testing.M) {
 
 	if config.authMode == enterprise {
 		config.enterpriseSlug = os.Getenv("GITHUB_ENTERPRISE_SLUG")
+		config.enterpriseTestOrganization = os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
+		config.enterpriseTestUsers = os.Getenv("ENTERPRISE_TEST_USERS")
 
 		if len(config.enterpriseSlug) == 0 {
 			fmt.Println("GITHUB_ENTERPRISE_SLUG environment variable not set")
@@ -176,6 +180,19 @@ func getTestMeta() (*Owner, error) {
 	}
 
 	return meta.(*Owner), nil
+}
+
+func splitCommaSeparated(v string) []string {
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func configureSweepers() {
