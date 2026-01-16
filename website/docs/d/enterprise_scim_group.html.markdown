@@ -11,7 +11,7 @@ Use this data source to retrieve SCIM provisioning information for a single ente
 
 ## Example Usage
 
-```
+```hcl
 data "github_enterprise_scim_group" "example" {
   enterprise     = "example-co"
   scim_group_id  = "123456"
@@ -22,7 +22,6 @@ data "github_enterprise_scim_group" "example" {
 
 * `enterprise` - (Required) The enterprise slug.
 * `scim_group_id` - (Required) The SCIM group ID.
-* `excluded_attributes` - (Optional) SCIM `excludedAttributes` query parameter.
 
 ## Attributes Reference
 

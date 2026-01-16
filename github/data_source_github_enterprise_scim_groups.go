@@ -134,21 +134,6 @@ func enterpriseSCIMMetaSchema() map[string]*schema.Schema {
 			Computed:    true,
 			Description: "The resource location.",
 		},
-		"version": {
-			Type:        schema.TypeString,
-			Computed:    true,
-			Description: "The resource version.",
-		},
-		"etag": {
-			Type:        schema.TypeString,
-			Computed:    true,
-			Description: "The resource eTag.",
-		},
-		"password_changed_at": {
-			Type:        schema.TypeString,
-			Computed:    true,
-			Description: "The password changed at timestamp (if present).",
-		},
 	}
 }
 
