@@ -190,19 +190,6 @@ func getTestMeta() (*Owner, error) {
 	return meta.(*Owner), nil
 }
 
-func splitCommaSeparated(v string) []string {
-	parts := strings.Split(v, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
 func configureSweepers() {
 	resource.AddTestSweepers("repositories", &resource.Sweeper{
 		Name: "repositories",
