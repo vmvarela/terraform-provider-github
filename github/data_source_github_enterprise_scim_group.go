@@ -1,0 +1,104 @@
+package github
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+)
+
+func dataSourceGithubEnterpriseSCIMGroup() *schema.Resource {
+	return &schema.Resource{
+		Description: "Lookup SCIM provisioning information for a single GitHub enterprise group.",
+		ReadContext: dataSourceGithubEnterpriseSCIMGroupRead,
+
+		Schema: map[string]*schema.Schema{
+			"enterprise": {
+				Description: "The enterprise slug.",
+				Type:        schema.TypeString,
+				Required:    true,
+			},
+			"scim_group_id": {
+				Description: "The SCIM group ID.",
+				Type:        schema.TypeString,
+				Required:    true,
+			},
+
+			"schemas": {
+				Type:        schema.TypeList,
+				Computed:    true,
+				Description: "SCIM schemas for this group.",
+				Elem:        &schema.Schema{Type: schema.TypeString},
+			},
+			"id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The SCIM group ID.",
+			},
+			"external_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The external ID for the group.",
+			},
+			"display_name": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: "The SCIM group displayName.",
+			},
+			"members": {
+				Type:        schema.TypeList,
+				Computed:    true,
+				Description: "Group members.",
+				Elem:        &schema.Resource{Schema: enterpriseSCIMGroupMemberSchema()},
+			},
+			"meta": {
+				Type:        schema.TypeList,
+				Computed:    true,
+				Description: "Resource metadata.",
+				Elem:        &schema.Resource{Schema: enterpriseSCIMMetaSchema()},
+			},
+		},
+	}
+}
+
+func dataSourceGithubEnterpriseSCIMGroupRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+	client := meta.(*Owner).v3client
+
+	enterprise := d.Get("enterprise").(string)
+	scimGroupID := d.Get("scim_group_id").(string)
+
+	group, _, err := client.Enterprise.GetProvisionedSCIMGroup(ctx, enterprise, scimGroupID, nil)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+
+	d.SetId(fmt.Sprintf("%s/%s", enterprise, scimGroupID))
+
+	if err := d.Set("schemas", group.Schemas); err != nil {
+		return diag.FromErr(err)
+	}
+	if group.ID != nil {
+		if err := d.Set("id", *group.ID); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+	if group.ExternalID != nil {
+		if err := d.Set("external_id", *group.ExternalID); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+	if group.DisplayName != nil {
+		if err := d.Set("display_name", *group.DisplayName); err != nil {
+			return diag.FromErr(err)
+		}
+	}
+	if err := d.Set("members", flattenEnterpriseSCIMGroupMembers(group.Members)); err != nil {
+		return diag.FromErr(err)
+	}
+	if err := d.Set("meta", flattenEnterpriseSCIMMeta(group.Meta)); err != nil {
+		return diag.FromErr(err)
+	}
+
+	return nil
+}
