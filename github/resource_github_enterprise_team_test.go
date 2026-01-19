@@ -67,8 +67,8 @@ func TestAccGithubEnterpriseTeam(t *testing.T) {
 func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	if testAccConf.enterpriseTestOrganization == "" {
-		t.Skip("Skipping because `ENTERPRISE_TEST_ORGANIZATION` is not set")
+	if testAccConf.owner == "" {
+		t.Skip("Skipping because `GITHUB_OWNER` is not set")
 	}
 
 	config1 := fmt.Sprintf(`
@@ -87,11 +87,11 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 			team_slug       = github_enterprise_team.test.slug
 			organization_slugs = ["%s"]
 		}
-	`, testAccConf.enterpriseSlug, randomID, testAccConf.enterpriseTestOrganization)
+	`, testAccConf.enterpriseSlug, randomID, testAccConf.owner)
 
 	check1 := resource.ComposeAggregateTestCheckFunc(
 		resource.TestCheckResourceAttr("github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
-		resource.TestCheckTypeSetElemAttr("github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.enterpriseTestOrganization),
+		resource.TestCheckTypeSetElemAttr("github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
 	)
 
 	resource.Test(t, resource.TestCase{
@@ -144,15 +144,11 @@ func TestAccGithubEnterpriseTeamOrganizations_emptyOrganizations(t *testing.T) {
 func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
 
-	if testAccConf.enterpriseTestUsers == "" {
-		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` is not set")
+	if testAccConf.username == "" {
+		t.Skip("Skipping because `GITHUB_USERNAME` is not set")
 	}
 
-	users := splitCommaSeparated(testAccConf.enterpriseTestUsers)
-	if len(users) == 0 {
-		t.Skip("Skipping because `ENTERPRISE_TEST_USERS` must contain at least one username")
-	}
-	username := users[0]
+	username := testAccConf.username
 
 	config := fmt.Sprintf(`
 		data "github_enterprise" "enterprise" {
