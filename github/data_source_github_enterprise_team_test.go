@@ -92,7 +92,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.github_enterprise_team_organizations.test", "id"),
 					resource.TestCheckResourceAttr("data.github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
-				resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
+					resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
 				),
 			},
 		},
