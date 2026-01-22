@@ -51,14 +51,11 @@ func resourceGithubEnterpriseTeam() *schema.Resource {
 				Description: "A description of the enterprise team.",
 			},
 			"organization_selection_type": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Default:     "disabled",
-				Description: "Controls which organizations can see this team: `disabled`, `selected`, or `all`.",
-				ValidateDiagFunc: toDiagFunc(
-					validation.StringInSlice([]string{"disabled", "selected", "all"}, false),
-					"organization_selection_type",
-				),
+				Type:             schema.TypeString,
+				Optional:         true,
+				Default:          "disabled",
+				Description:      "Controls which organizations can see this team: `disabled`, `selected`, or `all`.",
+				ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"disabled", "selected", "all"}, false)),
 			},
 			"group_id": {
 				Type:        schema.TypeString,
