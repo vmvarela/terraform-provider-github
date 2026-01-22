@@ -98,36 +98,36 @@ func dataSourceGithubEnterpriseSCIMUserRead(ctx context.Context, d *schema.Resou
 	d.SetId(fmt.Sprintf("%s/%s", enterprise, scimUserID))
 
 	if err := d.Set("schemas", user.Schemas); err != nil {
-		return diag.Errorf("error setting schemas: %s", err)
+		return diag.FromErr(err)
 	}
 	if user.ID != nil {
 		if err := d.Set("id", *user.ID); err != nil {
-			return diag.Errorf("error setting id: %s", err)
+			return diag.FromErr(err)
 		}
 	}
 	if err := d.Set("external_id", user.ExternalID); err != nil {
-		return diag.Errorf("error setting external_id: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("user_name", user.UserName); err != nil {
-		return diag.Errorf("error setting user_name: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("display_name", user.DisplayName); err != nil {
-		return diag.Errorf("error setting display_name: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("active", user.Active); err != nil {
-		return diag.Errorf("error setting active: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("name", flattenEnterpriseSCIMUserName(user.Name)); err != nil {
-		return diag.Errorf("error setting name: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("emails", flattenEnterpriseSCIMUserEmails(user.Emails)); err != nil {
-		return diag.Errorf("error setting emails: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("roles", flattenEnterpriseSCIMUserRoles(user.Roles)); err != nil {
-		return diag.Errorf("error setting roles: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("meta", flattenEnterpriseSCIMMeta(user.Meta)); err != nil {
-		return diag.Errorf("error setting meta: %s", err)
+		return diag.FromErr(err)
 	}
 
 	return nil

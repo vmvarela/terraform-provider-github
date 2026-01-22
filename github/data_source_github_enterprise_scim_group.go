@@ -76,28 +76,28 @@ func dataSourceGithubEnterpriseSCIMGroupRead(ctx context.Context, d *schema.Reso
 	d.SetId(fmt.Sprintf("%s/%s", enterprise, scimGroupID))
 
 	if err := d.Set("schemas", group.Schemas); err != nil {
-		return diag.Errorf("error setting schemas: %s", err)
+		return diag.FromErr(err)
 	}
 	if group.ID != nil {
 		if err := d.Set("id", *group.ID); err != nil {
-			return diag.Errorf("error setting id: %s", err)
+			return diag.FromErr(err)
 		}
 	}
 	if group.ExternalID != nil {
 		if err := d.Set("external_id", *group.ExternalID); err != nil {
-			return diag.Errorf("error setting external_id: %s", err)
+			return diag.FromErr(err)
 		}
 	}
 	if group.DisplayName != nil {
 		if err := d.Set("display_name", *group.DisplayName); err != nil {
-			return diag.Errorf("error setting display_name: %s", err)
+			return diag.FromErr(err)
 		}
 	}
 	if err := d.Set("members", flattenEnterpriseSCIMGroupMembers(group.Members)); err != nil {
-		return diag.Errorf("error setting members: %s", err)
+		return diag.FromErr(err)
 	}
 	if err := d.Set("meta", flattenEnterpriseSCIMMeta(group.Meta)); err != nil {
-		return diag.Errorf("error setting meta: %s", err)
+		return diag.FromErr(err)
 	}
 
 	return nil

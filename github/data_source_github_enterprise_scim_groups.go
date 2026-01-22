@@ -92,33 +92,29 @@ func dataSourceGithubEnterpriseSCIMGroupsRead(ctx context.Context, d *schema.Res
 	d.SetId(id)
 
 	if err := d.Set("schemas", first.Schemas); err != nil {
-		return diag.Errorf("error setting schemas: %s", err)
+		return diag.FromErr(err)
 	}
 	if first.TotalResults != nil {
 		if err := d.Set("total_results", *first.TotalResults); err != nil {
-			return diag.Errorf("error setting total_results: %s", err)
+			return diag.FromErr(err)
 		}
 	}
+	startIndex := 1
 	if first.StartIndex != nil && *first.StartIndex > 0 {
-		if err := d.Set("start_index", *first.StartIndex); err != nil {
-			return diag.Errorf("error setting start_index: %s", err)
-		}
-	} else {
-		if err := d.Set("start_index", 1); err != nil {
-			return diag.Errorf("error setting start_index: %s", err)
-		}
+		startIndex = *first.StartIndex
 	}
+	if err := d.Set("start_index", startIndex); err != nil {
+		return diag.FromErr(err)
+	}
+	itemsPerPage := count
 	if first.ItemsPerPage != nil && *first.ItemsPerPage > 0 {
-		if err := d.Set("items_per_page", *first.ItemsPerPage); err != nil {
-			return diag.Errorf("error setting items_per_page: %s", err)
-		}
-	} else {
-		if err := d.Set("items_per_page", count); err != nil {
-			return diag.Errorf("error setting items_per_page: %s", err)
-		}
+		itemsPerPage = *first.ItemsPerPage
+	}
+	if err := d.Set("items_per_page", itemsPerPage); err != nil {
+		return diag.FromErr(err)
 	}
 	if err := d.Set("resources", flat); err != nil {
-		return diag.Errorf("error setting resources: %s", err)
+		return diag.FromErr(err)
 	}
 
 	return nil
