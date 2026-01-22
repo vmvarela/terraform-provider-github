@@ -23,7 +23,7 @@ func dataSourceGithubEnterpriseCostCenters() *schema.Resource {
 			"state": {
 				Type:             schema.TypeString,
 				Optional:         true,
-				ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"active", "deleted"}, false), "state"),
+				ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"active", "deleted"}, false)),
 				Description:      "Filter cost centers by state.",
 			},
 			"cost_centers": {
@@ -64,8 +64,7 @@ func dataSourceGithubEnterpriseCostCentersRead(ctx context.Context, d *schema.Re
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	var state *string
 	if v, ok := d.GetOk("state"); ok {
-		s := v.(string)
-		state = &s
+		state = github.Ptr(v.(string))
 	}
 
 	result, _, err := client.Enterprise.ListCostCenters(ctx, enterpriseSlug, &github.ListCostCenterOptions{State: state})
@@ -86,7 +85,7 @@ func dataSourceGithubEnterpriseCostCentersRead(ctx context.Context, d *schema.Re
 		})
 	}
 
-	stateStr := ""
+	stateStr := "all"
 	if state != nil {
 		stateStr = *state
 	}

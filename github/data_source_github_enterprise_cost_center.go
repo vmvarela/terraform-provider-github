@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -76,11 +75,7 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 		return diag.FromErr(err)
 	}
 
-	state := strings.ToLower(cc.GetState())
-	if state == "" {
-		state = "active"
-	}
-	if err := d.Set("state", state); err != nil {
+	if err := d.Set("state", cc.GetState()); err != nil {
 		return diag.FromErr(err)
 	}
 	if err := d.Set("azure_subscription", cc.GetAzureSubscription()); err != nil {

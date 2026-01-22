@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -87,13 +86,13 @@ func resourceGithubEnterpriseCostCenterCreate(ctx context.Context, d *schema.Res
 	}
 
 	if cc == nil || cc.ID == "" {
-		return diag.Errorf("failed to create cost center: missing id in response")
+		return diag.Errorf("failed to create cost center: missing id in response (unexpected API response; please retry or contact support)")
 	}
 
 	d.SetId(cc.ID)
 
 	if hasCostCenterAssignmentsConfigured(d) {
-		if diags := syncEnterpriseCostCenterAssignments(ctx, d, client, enterpriseSlug, cc.ID, nil); diags.HasError() {
+		if diags := syncEnterpriseCostCenterAssignments(ctx, d, client, enterpriseSlug, cc.ID); diags.HasError() {
 			return diags
 		}
 	}
@@ -221,57 +220,28 @@ func resourceGithubEnterpriseCostCenterImport(ctx context.Context, d *schema.Res
 	return []*schema.ResourceData{d}, nil
 }
 
-func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.ResourceData, client *github.Client, enterpriseSlug, costCenterID string, currentResources []*github.CostCenterResource) diag.Diagnostics {
+func syncEnterpriseCostCenterAssignments(ctx context.Context, d *schema.ResourceData, client *github.Client, enterpriseSlug, costCenterID string) diag.Diagnostics {
 	desiredUsers := expandStringSet(getStringSetOrEmpty(d, "users"))
 	desiredOrgs := expandStringSet(getStringSetOrEmpty(d, "organizations"))
 	desiredRepos := expandStringSet(getStringSetOrEmpty(d, "repositories"))
 
-	currentUsers, currentOrgs, currentRepos := costCenterSplitResources(currentResources)
-
-	toAddUsers, toRemoveUsers := diffStringSlices(currentUsers, desiredUsers)
-	toAddOrgs, toRemoveOrgs := diffStringSlices(currentOrgs, desiredOrgs)
-	toAddRepos, toRemoveRepos := diffStringSlices(currentRepos, desiredRepos)
-
-	if len(toRemoveUsers)+len(toRemoveOrgs)+len(toRemoveRepos) > 0 {
-		tflog.Info(ctx, "Removing enterprise cost center resources", map[string]any{
-			"enterprise_slug": enterpriseSlug,
-			"cost_center_id":  costCenterID,
-		})
-
-		for _, batch := range chunkStringSlice(toRemoveUsers) {
-			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
-				return diags
-			}
-		}
-		for _, batch := range chunkStringSlice(toRemoveOrgs) {
-			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
-				return diags
-			}
-		}
-		for _, batch := range chunkStringSlice(toRemoveRepos) {
-			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
-				return diags
-			}
-		}
-	}
-
-	if len(toAddUsers)+len(toAddOrgs)+len(toAddRepos) > 0 {
+	if len(desiredUsers)+len(desiredOrgs)+len(desiredRepos) > 0 {
 		tflog.Info(ctx, "Assigning enterprise cost center resources", map[string]any{
 			"enterprise_slug": enterpriseSlug,
 			"cost_center_id":  costCenterID,
 		})
 
-		for _, batch := range chunkStringSlice(toAddUsers) {
+		for _, batch := range chunkStringSlice(desiredUsers) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunkStringSlice(toAddOrgs) {
+		for _, batch := range chunkStringSlice(desiredOrgs) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
-		for _, batch := range chunkStringSlice(toAddRepos) {
+		for _, batch := range chunkStringSlice(desiredRepos) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
@@ -286,16 +256,16 @@ func syncCostCenterAssignmentsFromState(ctx context.Context, d *schema.ResourceD
 	var toAddUsers, toRemoveUsers, toAddOrgs, toRemoveOrgs, toAddRepos, toRemoveRepos []string
 
 	if d.HasChange("users") {
-		old, new := d.GetChange("users")
-		toRemoveUsers, toAddUsers = diffSets(old.(*schema.Set), new.(*schema.Set))
+		oldSet, newSet := d.GetChange("users")
+		toRemoveUsers, toAddUsers = diffSets(oldSet.(*schema.Set), newSet.(*schema.Set))
 	}
 	if d.HasChange("organizations") {
-		old, new := d.GetChange("organizations")
-		toRemoveOrgs, toAddOrgs = diffSets(old.(*schema.Set), new.(*schema.Set))
+		oldSet, newSet := d.GetChange("organizations")
+		toRemoveOrgs, toAddOrgs = diffSets(oldSet.(*schema.Set), newSet.(*schema.Set))
 	}
 	if d.HasChange("repositories") {
-		old, new := d.GetChange("repositories")
-		toRemoveRepos, toAddRepos = diffSets(old.(*schema.Set), new.(*schema.Set))
+		oldSet, newSet := d.GetChange("repositories")
+		toRemoveRepos, toAddRepos = diffSets(oldSet.(*schema.Set), newSet.(*schema.Set))
 	}
 
 	if len(toRemoveUsers)+len(toRemoveOrgs)+len(toRemoveRepos) > 0 {
@@ -382,28 +352,12 @@ func getStringSetOrEmpty(d *schema.ResourceData, key string) *schema.Set {
 	return set
 }
 
-func diffStringSlices(current, desired []string) (toAdd, toRemove []string) {
-	cur := schema.NewSet(schema.HashString, flattenStringList(current))
-	des := schema.NewSet(schema.HashString, flattenStringList(desired))
-
-	for _, v := range des.Difference(cur).List() {
-		toAdd = append(toAdd, v.(string))
-	}
-	for _, v := range cur.Difference(des).List() {
-		toRemove = append(toRemove, v.(string))
-	}
-
-	sort.Strings(toAdd)
-	sort.Strings(toRemove)
-	return toAdd, toRemove
-}
-
 // diffSets returns elements to remove (in old but not new) and to add (in new but not old).
-func diffSets(old, new *schema.Set) (toRemove, toAdd []string) {
-	for _, v := range old.Difference(new).List() {
+func diffSets(oldSet, newSet *schema.Set) (toRemove, toAdd []string) {
+	for _, v := range oldSet.Difference(newSet).List() {
 		toRemove = append(toRemove, v.(string))
 	}
-	for _, v := range new.Difference(old).List() {
+	for _, v := range newSet.Difference(oldSet).List() {
 		toAdd = append(toAdd, v.(string))
 	}
 	return toRemove, toAdd
@@ -442,9 +396,6 @@ func costCenterSplitResources(resources []*github.CostCenterResource) (users, or
 // setCostCenterResourceFields sets the resource-related fields on the schema.ResourceData.
 func setCostCenterResourceFields(d *schema.ResourceData, cc *github.CostCenter) error {
 	users, organizations, repositories := costCenterSplitResources(cc.Resources)
-	sort.Strings(users)
-	sort.Strings(organizations)
-	sort.Strings(repositories)
 	if err := d.Set("users", flattenStringList(users)); err != nil {
 		return err
 	}
