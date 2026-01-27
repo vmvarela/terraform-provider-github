@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
@@ -78,6 +79,11 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
+	orgSlug := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
+	if orgSlug == "" {
+		t.Skip("ENTERPRISE_TEST_ORGANIZATION not set")
+	}
+
 	t.Run("retrieves team organizations without error", func(t *testing.T) {
 		randomID := acctest.RandString(5)
 
@@ -100,7 +106,7 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 						resource "github_enterprise_team_organizations" "assign" {
 							enterprise_slug    = data.github_enterprise.enterprise.slug
 							team_slug          = github_enterprise_team.test.slug
-							organization_slugs = ["%s"]
+							organization_slugs = [%q]
 						}
 
 						data "github_enterprise_team_organizations" "test" {
@@ -108,11 +114,11 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 							team_slug       = github_enterprise_team.test.slug
 							depends_on      = [github_enterprise_team_organizations.assign]
 						}
-					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.owner),
+					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, orgSlug),
 					Check: resource.ComposeAggregateTestCheckFunc(
 						resource.TestCheckResourceAttrSet("data.github_enterprise_team_organizations.test", "id"),
 						resource.TestCheckResourceAttr("data.github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
-						resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
+						resource.TestCheckTypeSetElemAttr("data.github_enterprise_team_organizations.test", "organization_slugs.*", orgSlug),
 					),
 				},
 			},
@@ -121,10 +127,12 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
+	username := os.Getenv("ENTERPRISE_TEST_USER")
+	if username == "" {
+		t.Skip("ENTERPRISE_TEST_USER not set")
+	}
+
 	t.Run("retrieves team membership without error", func(t *testing.T) {
-		if testAccConf.testOrgUser == "" {
-			t.Skip("Skipping because GH_TEST_ORG_USER is not set")
-		}
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -145,19 +153,19 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 						resource "github_enterprise_team_membership" "test" {
 							enterprise_slug = data.github_enterprise.enterprise.slug
 							team_slug       = github_enterprise_team.test.slug
-							username        = "%s"
+							username        = %q
 						}
 
 						data "github_enterprise_team_membership" "test" {
 							enterprise_slug = data.github_enterprise.enterprise.slug
 							team_slug       = github_enterprise_team.test.slug
-							username        = "%s"
+							username        = %q
 							depends_on      = [github_enterprise_team_membership.test]
 						}
-					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.testOrgUser, testAccConf.testOrgUser),
+					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, username, username),
 					Check: resource.ComposeAggregateTestCheckFunc(
 						resource.TestCheckResourceAttrSet("data.github_enterprise_team_membership.test", "id"),
-						resource.TestCheckResourceAttr("data.github_enterprise_team_membership.test", "username", testAccConf.testOrgUser),
+						resource.TestCheckResourceAttr("data.github_enterprise_team_membership.test", "username", username),
 					),
 				},
 			},

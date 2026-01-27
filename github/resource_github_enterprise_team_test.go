@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"testing"
 
@@ -91,6 +92,11 @@ func TestAccGithubEnterpriseTeam(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
+	orgSlug := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
+	if orgSlug == "" {
+		t.Skip("ENTERPRISE_TEST_ORGANIZATION not set")
+	}
+
 	t.Run("assigns organizations to team without error", func(t *testing.T) {
 		randomID := acctest.RandString(5)
 
@@ -113,12 +119,12 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 						resource "github_enterprise_team_organizations" "test" {
 							enterprise_slug    = data.github_enterprise.enterprise.slug
 							team_slug          = github_enterprise_team.test.slug
-							organization_slugs = ["%s"]
+							organization_slugs = [%q]
 						}
-					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.owner),
+					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, orgSlug),
 					Check: resource.ComposeAggregateTestCheckFunc(
 						resource.TestCheckResourceAttr("github_enterprise_team_organizations.test", "organization_slugs.#", "1"),
-						resource.TestCheckTypeSetElemAttr("github_enterprise_team_organizations.test", "organization_slugs.*", testAccConf.owner),
+						resource.TestCheckTypeSetElemAttr("github_enterprise_team_organizations.test", "organization_slugs.*", orgSlug),
 					),
 				},
 			},
@@ -147,9 +153,9 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 						resource "github_enterprise_team_organizations" "test" {
 							enterprise_slug    = data.github_enterprise.enterprise.slug
 							team_slug          = github_enterprise_team.test.slug
-							organization_slugs = ["%s"]
+							organization_slugs = [%q]
 						}
-					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.owner),
+					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, orgSlug),
 				},
 				{
 					ResourceName:      "github_enterprise_team_organizations.test",
@@ -193,10 +199,12 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
+	username := os.Getenv("ENTERPRISE_TEST_USER")
+	if username == "" {
+		t.Skip("ENTERPRISE_TEST_USER not set")
+	}
+
 	t.Run("adds member to team without error", func(t *testing.T) {
-		if testAccConf.testOrgUser == "" {
-			t.Skip("Skipping because GH_TEST_ORG_USER is not set")
-		}
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -217,11 +225,11 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 						resource "github_enterprise_team_membership" "test" {
 							enterprise_slug = data.github_enterprise.enterprise.slug
 							team_slug       = github_enterprise_team.test.slug
-							username        = "%s"
+							username        = %q
 						}
-					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.testOrgUser),
+					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, username),
 					Check: resource.ComposeAggregateTestCheckFunc(
-						resource.TestCheckResourceAttr("github_enterprise_team_membership.test", "username", testAccConf.testOrgUser),
+						resource.TestCheckResourceAttr("github_enterprise_team_membership.test", "username", username),
 					),
 				},
 			},
@@ -229,9 +237,6 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 	})
 
 	t.Run("imports resource without error", func(t *testing.T) {
-		if testAccConf.testOrgUser == "" {
-			t.Skip("Skipping because GH_TEST_ORG_USER is not set")
-		}
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -252,9 +257,9 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 						resource "github_enterprise_team_membership" "test" {
 							enterprise_slug = data.github_enterprise.enterprise.slug
 							team_slug       = github_enterprise_team.test.slug
-							username        = "%s"
+							username        = %q
 						}
-					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, testAccConf.testOrgUser),
+					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, username),
 				},
 				{
 					ResourceName:      "github_enterprise_team_membership.test",
