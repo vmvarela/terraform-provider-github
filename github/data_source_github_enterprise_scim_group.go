@@ -9,56 +9,22 @@ import (
 )
 
 func dataSourceGithubEnterpriseSCIMGroup() *schema.Resource {
+	s := enterpriseSCIMGroupSchema()
+	s["enterprise"] = &schema.Schema{
+		Description: "The enterprise slug.",
+		Type:        schema.TypeString,
+		Required:    true,
+	}
+	s["scim_group_id"] = &schema.Schema{
+		Description: "The SCIM group ID.",
+		Type:        schema.TypeString,
+		Required:    true,
+	}
+
 	return &schema.Resource{
 		Description: "Lookup SCIM provisioning information for a single GitHub enterprise group.",
 		ReadContext: dataSourceGithubEnterpriseSCIMGroupRead,
-
-		Schema: map[string]*schema.Schema{
-			"enterprise": {
-				Description: "The enterprise slug.",
-				Type:        schema.TypeString,
-				Required:    true,
-			},
-			"scim_group_id": {
-				Description: "The SCIM group ID.",
-				Type:        schema.TypeString,
-				Required:    true,
-			},
-
-			"schemas": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "SCIM schemas for this group.",
-				Elem:        &schema.Schema{Type: schema.TypeString},
-			},
-			"id": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The SCIM group ID.",
-			},
-			"external_id": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The external ID for the group.",
-			},
-			"display_name": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The SCIM group displayName.",
-			},
-			"members": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "Group members.",
-				Elem:        &schema.Resource{Schema: enterpriseSCIMGroupMemberSchema()},
-			},
-			"meta": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "Resource metadata.",
-				Elem:        &schema.Resource{Schema: enterpriseSCIMMetaSchema()},
-			},
-		},
+		Schema:      s,
 	}
 }
 

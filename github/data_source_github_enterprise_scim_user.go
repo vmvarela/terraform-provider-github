@@ -9,78 +9,22 @@ import (
 )
 
 func dataSourceGithubEnterpriseSCIMUser() *schema.Resource {
+	s := enterpriseSCIMUserSchema()
+	s["enterprise"] = &schema.Schema{
+		Description: "The enterprise slug.",
+		Type:        schema.TypeString,
+		Required:    true,
+	}
+	s["scim_user_id"] = &schema.Schema{
+		Description: "The SCIM user ID.",
+		Type:        schema.TypeString,
+		Required:    true,
+	}
+
 	return &schema.Resource{
 		Description: "Lookup SCIM provisioning information for a single GitHub enterprise user.",
 		ReadContext: dataSourceGithubEnterpriseSCIMUserRead,
-
-		Schema: map[string]*schema.Schema{
-			"enterprise": {
-				Description: "The enterprise slug.",
-				Type:        schema.TypeString,
-				Required:    true,
-			},
-			"scim_user_id": {
-				Description: "The SCIM user ID.",
-				Type:        schema.TypeString,
-				Required:    true,
-			},
-
-			"schemas": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "SCIM schemas for this user.",
-				Elem:        &schema.Schema{Type: schema.TypeString},
-			},
-			"id": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The SCIM user ID.",
-			},
-			"external_id": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The external ID for the user.",
-			},
-			"user_name": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The SCIM userName.",
-			},
-			"display_name": {
-				Type:        schema.TypeString,
-				Computed:    true,
-				Description: "The SCIM displayName.",
-			},
-			"active": {
-				Type:        schema.TypeBool,
-				Computed:    true,
-				Description: "Whether the user is active.",
-			},
-			"name": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "User name object.",
-				Elem:        &schema.Resource{Schema: enterpriseSCIMUserNameSchema()},
-			},
-			"emails": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "User emails.",
-				Elem:        &schema.Resource{Schema: enterpriseSCIMUserEmailSchema()},
-			},
-			"roles": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "User roles.",
-				Elem:        &schema.Resource{Schema: enterpriseSCIMUserRoleSchema()},
-			},
-			"meta": {
-				Type:        schema.TypeList,
-				Computed:    true,
-				Description: "Resource metadata.",
-				Elem:        &schema.Resource{Schema: enterpriseSCIMMetaSchema()},
-			},
-		},
+		Schema:      s,
 	}
 }
 
