@@ -306,6 +306,10 @@ func Provider() *schema.Provider {
 			"github_enterprise_teams":                                               dataSourceGithubEnterpriseTeams(),
 			"github_enterprise_team_membership":                                     dataSourceGithubEnterpriseTeamMembership(),
 			"github_enterprise_team_organizations":                                  dataSourceGithubEnterpriseTeamOrganizations(),
+			"github_enterprise_scim_groups":                                         dataSourceGithubEnterpriseSCIMGroups(),
+			"github_enterprise_scim_group":                                          dataSourceGithubEnterpriseSCIMGroup(),
+			"github_enterprise_scim_users":                                          dataSourceGithubEnterpriseSCIMUsers(),
+			"github_enterprise_scim_user":                                           dataSourceGithubEnterpriseSCIMUser(),
 			"github_repository_environment_deployment_policies":                     dataSourceGithubRepositoryEnvironmentDeploymentPolicies(),
 		},
 	}
