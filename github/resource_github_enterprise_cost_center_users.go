@@ -13,9 +13,9 @@ import (
 func resourceGithubEnterpriseCostCenterUsers() *schema.Resource {
 	return &schema.Resource{
 		Description:   "Manages user assignments for a GitHub enterprise cost center (authoritative).",
-		CreateContext: resourceGithubEnterpriseCostCenterUsersCreateOrUpdate,
+		CreateContext: resourceGithubEnterpriseCostCenterUsersCreate,
 		ReadContext:   resourceGithubEnterpriseCostCenterUsersRead,
-		UpdateContext: resourceGithubEnterpriseCostCenterUsersCreateOrUpdate,
+		UpdateContext: resourceGithubEnterpriseCostCenterUsersUpdate,
 		DeleteContext: resourceGithubEnterpriseCostCenterUsersDelete,
 		Importer: &schema.ResourceImporter{
 			StateContext: resourceGithubEnterpriseCostCenterUsersImport,
@@ -45,42 +45,60 @@ func resourceGithubEnterpriseCostCenterUsers() *schema.Resource {
 	}
 }
 
-func resourceGithubEnterpriseCostCenterUsersCreateOrUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+func resourceGithubEnterpriseCostCenterUsersCreate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	// If this is Create, set the ID
-	if d.Id() == "" {
-		id, err := buildID(enterpriseSlug, costCenterID)
-		if err != nil {
-			return diag.FromErr(err)
+	id, err := buildID(enterpriseSlug, costCenterID)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	d.SetId(id)
+
+	desiredUsersSet := d.Get("usernames").(*schema.Set)
+	toAdd := expandStringList(desiredUsersSet.List())
+
+	if len(toAdd) > 0 {
+		tflog.Info(ctx, "Adding users to cost center", map[string]any{
+			"enterprise_slug": enterpriseSlug,
+			"cost_center_id":  costCenterID,
+			"count":           len(toAdd),
+		})
+
+		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
+			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
+				return diags
+			}
 		}
-		d.SetId(id)
 	}
 
-	// Get current assignments from API
+	return nil
+}
+
+func resourceGithubEnterpriseCostCenterUsersUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+	client := meta.(*Owner).v3client
+	enterpriseSlug := d.Get("enterprise_slug").(string)
+	costCenterID := d.Get("cost_center_id").(string)
+
 	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	// Extract current users
 	currentUsers := make(map[string]bool)
-	for _, r := range cc.Resources {
-		if r != nil && r.Type == "User" {
-			currentUsers[r.Name] = true
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeUser {
+			currentUsers[ccResource.Name] = true
 		}
 	}
 
-	// Get desired users from config
 	desiredUsersSet := d.Get("usernames").(*schema.Set)
 	desiredUsers := make(map[string]bool)
-	for _, u := range desiredUsersSet.List() {
-		desiredUsers[u.(string)] = true
+	for _, username := range desiredUsersSet.List() {
+		desiredUsers[username.(string)] = true
 	}
 
-	// Calculate additions and removals
 	var toAdd, toRemove []string
 	for user := range desiredUsers {
 		if !currentUsers[user] {
@@ -93,7 +111,6 @@ func resourceGithubEnterpriseCostCenterUsersCreateOrUpdate(ctx context.Context, 
 		}
 	}
 
-	// Remove users no longer desired
 	if len(toRemove) > 0 {
 		tflog.Info(ctx, "Removing users from cost center", map[string]any{
 			"enterprise_slug": enterpriseSlug,
@@ -101,14 +118,13 @@ func resourceGithubEnterpriseCostCenterUsersCreateOrUpdate(ctx context.Context, 
 			"count":           len(toRemove),
 		})
 
-		for _, batch := range chunkStringSlice(toRemove, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toRemove, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
 	}
 
-	// Add new users
 	if len(toAdd) > 0 {
 		tflog.Info(ctx, "Adding users to cost center", map[string]any{
 			"enterprise_slug": enterpriseSlug,
@@ -116,14 +132,14 @@ func resourceGithubEnterpriseCostCenterUsersCreateOrUpdate(ctx context.Context, 
 			"count":           len(toAdd),
 		})
 
-		for _, batch := range chunkStringSlice(toAdd, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}
 		}
 	}
 
-	return resourceGithubEnterpriseCostCenterUsersRead(ctx, d, meta)
+	return nil
 }
 
 func resourceGithubEnterpriseCostCenterUsersRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
@@ -144,11 +160,10 @@ func resourceGithubEnterpriseCostCenterUsersRead(ctx context.Context, d *schema.
 		return diag.FromErr(err)
 	}
 
-	// Extract users from resources
 	var users []string
-	for _, r := range cc.Resources {
-		if r != nil && r.Type == "User" {
-			users = append(users, r.Name)
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeUser {
+			users = append(users, ccResource.Name)
 		}
 	}
 
@@ -165,7 +180,7 @@ func resourceGithubEnterpriseCostCenterUsersDelete(ctx context.Context, d *schem
 	costCenterID := d.Get("cost_center_id").(string)
 
 	usernamesSet := d.Get("usernames").(*schema.Set)
-	usernames := expandStringSet(usernamesSet)
+	usernames := expandStringList(usernamesSet.List())
 
 	if len(usernames) > 0 {
 		tflog.Info(ctx, "Removing all users from cost center", map[string]any{
@@ -174,7 +189,7 @@ func resourceGithubEnterpriseCostCenterUsersDelete(ctx context.Context, d *schem
 			"count":           len(usernames),
 		})
 
-		for _, batch := range chunkStringSlice(usernames, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(usernames, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
 				return diags
 			}

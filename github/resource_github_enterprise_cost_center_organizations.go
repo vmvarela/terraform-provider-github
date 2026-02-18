@@ -13,9 +13,9 @@ import (
 func resourceGithubEnterpriseCostCenterOrganizations() *schema.Resource {
 	return &schema.Resource{
 		Description:   "Manages organization assignments for a GitHub enterprise cost center (authoritative).",
-		CreateContext: resourceGithubEnterpriseCostCenterOrganizationsCreateOrUpdate,
+		CreateContext: resourceGithubEnterpriseCostCenterOrganizationsCreate,
 		ReadContext:   resourceGithubEnterpriseCostCenterOrganizationsRead,
-		UpdateContext: resourceGithubEnterpriseCostCenterOrganizationsCreateOrUpdate,
+		UpdateContext: resourceGithubEnterpriseCostCenterOrganizationsUpdate,
 		DeleteContext: resourceGithubEnterpriseCostCenterOrganizationsDelete,
 		Importer: &schema.ResourceImporter{
 			StateContext: resourceGithubEnterpriseCostCenterOrganizationsImport,
@@ -45,18 +45,41 @@ func resourceGithubEnterpriseCostCenterOrganizations() *schema.Resource {
 	}
 }
 
-func resourceGithubEnterpriseCostCenterOrganizationsCreateOrUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+func resourceGithubEnterpriseCostCenterOrganizationsCreate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	if d.Id() == "" {
-		id, err := buildID(enterpriseSlug, costCenterID)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		d.SetId(id)
+	id, err := buildID(enterpriseSlug, costCenterID)
+	if err != nil {
+		return diag.FromErr(err)
 	}
+	d.SetId(id)
+
+	desiredOrgsSet := d.Get("organization_logins").(*schema.Set)
+	toAdd := expandStringList(desiredOrgsSet.List())
+
+	if len(toAdd) > 0 {
+		tflog.Info(ctx, "Adding organizations to cost center", map[string]any{
+			"enterprise_slug": enterpriseSlug,
+			"cost_center_id":  costCenterID,
+			"count":           len(toAdd),
+		})
+
+		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
+			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
+				return diags
+			}
+		}
+	}
+
+	return nil
+}
+
+func resourceGithubEnterpriseCostCenterOrganizationsUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+	client := meta.(*Owner).v3client
+	enterpriseSlug := d.Get("enterprise_slug").(string)
+	costCenterID := d.Get("cost_center_id").(string)
 
 	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -64,16 +87,16 @@ func resourceGithubEnterpriseCostCenterOrganizationsCreateOrUpdate(ctx context.C
 	}
 
 	currentOrgs := make(map[string]bool)
-	for _, r := range cc.Resources {
-		if r != nil && r.Type == "Org" {
-			currentOrgs[r.Name] = true
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeOrg {
+			currentOrgs[ccResource.Name] = true
 		}
 	}
 
 	desiredOrgsSet := d.Get("organization_logins").(*schema.Set)
 	desiredOrgs := make(map[string]bool)
-	for _, o := range desiredOrgsSet.List() {
-		desiredOrgs[o.(string)] = true
+	for _, org := range desiredOrgsSet.List() {
+		desiredOrgs[org.(string)] = true
 	}
 
 	var toAdd, toRemove []string
@@ -95,7 +118,7 @@ func resourceGithubEnterpriseCostCenterOrganizationsCreateOrUpdate(ctx context.C
 			"count":           len(toRemove),
 		})
 
-		for _, batch := range chunkStringSlice(toRemove, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toRemove, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
@@ -109,14 +132,14 @@ func resourceGithubEnterpriseCostCenterOrganizationsCreateOrUpdate(ctx context.C
 			"count":           len(toAdd),
 		})
 
-		for _, batch := range chunkStringSlice(toAdd, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}
 		}
 	}
 
-	return resourceGithubEnterpriseCostCenterOrganizationsRead(ctx, d, meta)
+	return nil
 }
 
 func resourceGithubEnterpriseCostCenterOrganizationsRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
@@ -138,9 +161,9 @@ func resourceGithubEnterpriseCostCenterOrganizationsRead(ctx context.Context, d 
 	}
 
 	var organizations []string
-	for _, r := range cc.Resources {
-		if r != nil && r.Type == "Org" {
-			organizations = append(organizations, r.Name)
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeOrg {
+			organizations = append(organizations, ccResource.Name)
 		}
 	}
 
@@ -157,7 +180,7 @@ func resourceGithubEnterpriseCostCenterOrganizationsDelete(ctx context.Context, 
 	costCenterID := d.Get("cost_center_id").(string)
 
 	organizationsSet := d.Get("organization_logins").(*schema.Set)
-	organizations := expandStringSet(organizationsSet)
+	organizations := expandStringList(organizationsSet.List())
 
 	if len(organizations) > 0 {
 		tflog.Info(ctx, "Removing all organizations from cost center", map[string]any{
@@ -166,7 +189,7 @@ func resourceGithubEnterpriseCostCenterOrganizationsDelete(ctx context.Context, 
 			"count":           len(organizations),
 		})
 
-		for _, batch := range chunkStringSlice(organizations, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(organizations, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
 				return diags
 			}

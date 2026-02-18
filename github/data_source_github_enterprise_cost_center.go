@@ -82,7 +82,6 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 		return diag.FromErr(err)
 	}
 
-	// Extract resources by type
 	users := make([]string, 0)
 	organizations := make([]string, 0)
 	repositories := make([]string, 0)
@@ -91,11 +90,11 @@ func dataSourceGithubEnterpriseCostCenterRead(ctx context.Context, d *schema.Res
 			continue
 		}
 		switch resource.Type {
-		case "User":
+		case CostCenterResourceTypeUser:
 			users = append(users, resource.Name)
-		case "Org":
+		case CostCenterResourceTypeOrg:
 			organizations = append(organizations, resource.Name)
-		case "Repo":
+		case CostCenterResourceTypeRepo:
 			repositories = append(repositories, resource.Name)
 		}
 	}

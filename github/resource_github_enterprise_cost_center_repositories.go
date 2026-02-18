@@ -13,9 +13,9 @@ import (
 func resourceGithubEnterpriseCostCenterRepositories() *schema.Resource {
 	return &schema.Resource{
 		Description:   "Manages repository assignments for a GitHub enterprise cost center (authoritative).",
-		CreateContext: resourceGithubEnterpriseCostCenterRepositoriesCreateOrUpdate,
+		CreateContext: resourceGithubEnterpriseCostCenterRepositoriesCreate,
 		ReadContext:   resourceGithubEnterpriseCostCenterRepositoriesRead,
-		UpdateContext: resourceGithubEnterpriseCostCenterRepositoriesCreateOrUpdate,
+		UpdateContext: resourceGithubEnterpriseCostCenterRepositoriesUpdate,
 		DeleteContext: resourceGithubEnterpriseCostCenterRepositoriesDelete,
 		Importer: &schema.ResourceImporter{
 			StateContext: resourceGithubEnterpriseCostCenterRepositoriesImport,
@@ -45,18 +45,41 @@ func resourceGithubEnterpriseCostCenterRepositories() *schema.Resource {
 	}
 }
 
-func resourceGithubEnterpriseCostCenterRepositoriesCreateOrUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+func resourceGithubEnterpriseCostCenterRepositoriesCreate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	if d.Id() == "" {
-		id, err := buildID(enterpriseSlug, costCenterID)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		d.SetId(id)
+	id, err := buildID(enterpriseSlug, costCenterID)
+	if err != nil {
+		return diag.FromErr(err)
 	}
+	d.SetId(id)
+
+	desiredReposSet := d.Get("repository_names").(*schema.Set)
+	toAdd := expandStringList(desiredReposSet.List())
+
+	if len(toAdd) > 0 {
+		tflog.Info(ctx, "Adding repositories to cost center", map[string]any{
+			"enterprise_slug": enterpriseSlug,
+			"cost_center_id":  costCenterID,
+			"count":           len(toAdd),
+		})
+
+		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
+			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
+				return diags
+			}
+		}
+	}
+
+	return nil
+}
+
+func resourceGithubEnterpriseCostCenterRepositoriesUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
+	client := meta.(*Owner).v3client
+	enterpriseSlug := d.Get("enterprise_slug").(string)
+	costCenterID := d.Get("cost_center_id").(string)
 
 	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
@@ -64,9 +87,9 @@ func resourceGithubEnterpriseCostCenterRepositoriesCreateOrUpdate(ctx context.Co
 	}
 
 	currentRepos := make(map[string]bool)
-	for _, r := range cc.Resources {
-		if r != nil && r.Type == "Repo" {
-			currentRepos[r.Name] = true
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeRepo {
+			currentRepos[ccResource.Name] = true
 		}
 	}
 
@@ -95,7 +118,7 @@ func resourceGithubEnterpriseCostCenterRepositoriesCreateOrUpdate(ctx context.Co
 			"count":           len(toRemove),
 		})
 
-		for _, batch := range chunkStringSlice(toRemove, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toRemove, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
@@ -109,14 +132,14 @@ func resourceGithubEnterpriseCostCenterRepositoriesCreateOrUpdate(ctx context.Co
 			"count":           len(toAdd),
 		})
 
-		for _, batch := range chunkStringSlice(toAdd, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
 		}
 	}
 
-	return resourceGithubEnterpriseCostCenterRepositoriesRead(ctx, d, meta)
+	return nil
 }
 
 func resourceGithubEnterpriseCostCenterRepositoriesRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
@@ -138,9 +161,9 @@ func resourceGithubEnterpriseCostCenterRepositoriesRead(ctx context.Context, d *
 	}
 
 	var repositories []string
-	for _, r := range cc.Resources {
-		if r != nil && r.Type == "Repo" {
-			repositories = append(repositories, r.Name)
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeRepo {
+			repositories = append(repositories, ccResource.Name)
 		}
 	}
 
@@ -157,7 +180,7 @@ func resourceGithubEnterpriseCostCenterRepositoriesDelete(ctx context.Context, d
 	costCenterID := d.Get("cost_center_id").(string)
 
 	repositoriesSet := d.Get("repository_names").(*schema.Set)
-	repositories := expandStringSet(repositoriesSet)
+	repositories := expandStringList(repositoriesSet.List())
 
 	if len(repositories) > 0 {
 		tflog.Info(ctx, "Removing all repositories from cost center", map[string]any{
@@ -166,7 +189,7 @@ func resourceGithubEnterpriseCostCenterRepositoriesDelete(ctx context.Context, d
 			"count":           len(repositories),
 		})
 
-		for _, batch := range chunkStringSlice(repositories, maxResourcesPerRequest) {
+		for _, batch := range chunkStringSlice(repositories, maxCostCenterResourcesPerRequest) {
 			if diags := retryCostCenterRemoveResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Repositories: batch}); diags.HasError() {
 				return diags
 			}
