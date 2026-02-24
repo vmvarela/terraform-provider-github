@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/google/go-github/v82/github"
+	"github.com/google/go-github/v83/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -39,7 +39,7 @@ func resourceGithubRepository() *schema.Resource {
 			"name": {
 				Type:             schema.TypeString,
 				Required:         true,
-				ValidateDiagFunc: toDiagFunc(validation.StringMatch(regexp.MustCompile(`^[-a-zA-Z0-9_.]{1,100}$`), "must include only alphanumeric characters, underscores or hyphens and consist of 100 characters or less"), "name"),
+				ValidateDiagFunc: validation.ToDiagFunc(validation.StringMatch(regexp.MustCompile(`^[-a-zA-Z0-9_.]{1,100}$`), "must include only alphanumeric characters, underscores or hyphens and consist of 100 characters or less")),
 				Description:      "The name of the repository.",
 			},
 			"description": {
@@ -63,7 +63,7 @@ func resourceGithubRepository() *schema.Resource {
 				Type:             schema.TypeString,
 				Optional:         true,
 				Computed:         true, // is affected by "private"
-				ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"public", "private", "internal"}, false), "visibility"),
+				ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"public", "private", "internal"}, false)),
 				Description:      "Can be 'public' or 'private'. If your organization is associated with an enterprise account using GitHub Enterprise Cloud or GitHub Enterprise Server 2.20+, visibility can also be 'internal'.",
 			},
 			// terraform-sdk-provider doesn't properly support tristate booleans: https://github.com/hashicorp/terraform-plugin-sdk/issues/817
@@ -104,7 +104,7 @@ func resourceGithubRepository() *schema.Resource {
 									"status": {
 										Type:             schema.TypeString,
 										Required:         true,
-										ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false), "status"),
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false)),
 										Description:      "Set to 'enabled' to enable advanced security features on the repository. Can be 'enabled' or 'disabled', This value being present when split licensing is enabled will error out.",
 									},
 								},
@@ -120,7 +120,7 @@ func resourceGithubRepository() *schema.Resource {
 									"status": {
 										Type:             schema.TypeString,
 										Required:         true,
-										ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false), "code_security"),
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false)),
 										Description:      "Set to 'enabled' to enable code security on the repository. Can be 'enabled' or 'disabled'. If set to 'enabled', the repository's visibility must be 'public', 'security_and_analysis[0].advanced_security[0].status' must also be set to 'enabled', or your Organization must have split licensing for Advanced security.",
 									},
 								},
@@ -136,7 +136,7 @@ func resourceGithubRepository() *schema.Resource {
 									"status": {
 										Type:             schema.TypeString,
 										Required:         true,
-										ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false), "secret_scanning"),
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false)),
 										Description:      "Set to 'enabled' to enable secret scanning on the repository. Can be 'enabled' or 'disabled'. If set to 'enabled', the repository's visibility must be 'public', 'security_and_analysis[0].advanced_security[0].status' must also be set to 'enabled', or your Organization must have split licensing for Advanced security.",
 									},
 								},
@@ -152,7 +152,7 @@ func resourceGithubRepository() *schema.Resource {
 									"status": {
 										Type:             schema.TypeString,
 										Required:         true,
-										ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false), "secret_scanning_push_protection"),
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false)),
 										Description:      "Set to 'enabled' to enable secret scanning push protection on the repository. Can be 'enabled' or 'disabled'. If set to 'enabled', the repository's visibility must be 'public', 'security_and_analysis[0].advanced_security[0].status' must also be set to 'enabled', or your Organization must have split licensing for Advanced security.",
 									},
 								},
@@ -168,7 +168,7 @@ func resourceGithubRepository() *schema.Resource {
 									"status": {
 										Type:             schema.TypeString,
 										Required:         true,
-										ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false), "secret_scanning_ai_detection"),
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false)),
 										Description:      "Set to 'enabled' to enable secret scanning AI detection on the repository. Can be 'enabled' or 'disabled'. If set to 'enabled', the repository's visibility must be 'public', 'security_and_analysis[0].advanced_security[0].status' must also be set to 'enabled', or your Organization must have split licensing for Advanced security.",
 									},
 								},
@@ -184,7 +184,7 @@ func resourceGithubRepository() *schema.Resource {
 									"status": {
 										Type:             schema.TypeString,
 										Required:         true,
-										ValidateDiagFunc: toDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false), "secret_scanning_non_provider_patterns"),
+										ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"enabled", "disabled"}, false)),
 										Description:      "Set to 'enabled' to enable secret scanning non-provider patterns on the repository. Can be 'enabled' or 'disabled'. If set to 'enabled', the repository's visibility must be 'public', 'security_and_analysis[0].advanced_security[0].status' must also be set to 'enabled', or your Organization must have split licensing for Advanced security.",
 									},
 								},
@@ -287,8 +287,8 @@ func resourceGithubRepository() *schema.Resource {
 			"web_commit_signoff_required": {
 				Type:        schema.TypeBool,
 				Optional:    true,
-				Default:     false,
-				Description: "Require contributors to sign off on web-based commits. Defaults to 'false'.",
+				Computed:    true,
+				Description: "Require contributors to sign off on web-based commits.",
 			},
 			"auto_init": {
 				Type:        schema.TypeBool,
@@ -392,7 +392,7 @@ func resourceGithubRepository() *schema.Resource {
 				Description: "The list of topics of the repository.",
 				Elem: &schema.Schema{
 					Type:             schema.TypeString,
-					ValidateDiagFunc: toDiagFunc(validation.StringMatch(regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,49}$`), "must include only lowercase alphanumeric characters or hyphens and cannot start with a hyphen and consist of 50 characters or less"), "topics"),
+					ValidateDiagFunc: validation.ToDiagFunc(validation.StringMatch(regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,49}$`), "must include only lowercase alphanumeric characters or hyphens and cannot start with a hyphen and consist of 50 characters or less")),
 				},
 			},
 			"vulnerability_alerts": {
@@ -586,29 +586,28 @@ func resourceGithubRepositoryObject(d *schema.ResourceData) *github.Repository {
 	visibility := calculateVisibility(d)
 
 	repository := &github.Repository{
-		Name:                     github.Ptr(d.Get("name").(string)),
-		Description:              github.Ptr(d.Get("description").(string)),
-		Homepage:                 github.Ptr(d.Get("homepage_url").(string)),
-		Visibility:               github.Ptr(visibility),
-		HasDownloads:             github.Ptr(d.Get("has_downloads").(bool)),
-		HasIssues:                github.Ptr(d.Get("has_issues").(bool)),
-		HasDiscussions:           github.Ptr(d.Get("has_discussions").(bool)),
-		HasProjects:              github.Ptr(d.Get("has_projects").(bool)),
-		HasWiki:                  github.Ptr(d.Get("has_wiki").(bool)),
-		IsTemplate:               github.Ptr(d.Get("is_template").(bool)),
-		AllowMergeCommit:         github.Ptr(d.Get("allow_merge_commit").(bool)),
-		AllowSquashMerge:         github.Ptr(d.Get("allow_squash_merge").(bool)),
-		AllowRebaseMerge:         github.Ptr(d.Get("allow_rebase_merge").(bool)),
-		AllowAutoMerge:           github.Ptr(d.Get("allow_auto_merge").(bool)),
-		DeleteBranchOnMerge:      github.Ptr(d.Get("delete_branch_on_merge").(bool)),
-		WebCommitSignoffRequired: github.Ptr(d.Get("web_commit_signoff_required").(bool)),
-		AutoInit:                 github.Ptr(d.Get("auto_init").(bool)),
-		LicenseTemplate:          github.Ptr(d.Get("license_template").(string)),
-		GitignoreTemplate:        github.Ptr(d.Get("gitignore_template").(string)),
-		Archived:                 github.Ptr(d.Get("archived").(bool)),
-		Topics:                   expandStringList(d.Get("topics").(*schema.Set).List()),
-		AllowUpdateBranch:        github.Ptr(d.Get("allow_update_branch").(bool)),
-		SecurityAndAnalysis:      calculateSecurityAndAnalysis(d),
+		Name:                github.Ptr(d.Get("name").(string)),
+		Description:         github.Ptr(d.Get("description").(string)),
+		Homepage:            github.Ptr(d.Get("homepage_url").(string)),
+		Visibility:          github.Ptr(visibility),
+		HasDownloads:        github.Ptr(d.Get("has_downloads").(bool)),
+		HasIssues:           github.Ptr(d.Get("has_issues").(bool)),
+		HasDiscussions:      github.Ptr(d.Get("has_discussions").(bool)),
+		HasProjects:         github.Ptr(d.Get("has_projects").(bool)),
+		HasWiki:             github.Ptr(d.Get("has_wiki").(bool)),
+		IsTemplate:          github.Ptr(d.Get("is_template").(bool)),
+		AllowMergeCommit:    github.Ptr(d.Get("allow_merge_commit").(bool)),
+		AllowSquashMerge:    github.Ptr(d.Get("allow_squash_merge").(bool)),
+		AllowRebaseMerge:    github.Ptr(d.Get("allow_rebase_merge").(bool)),
+		AllowAutoMerge:      github.Ptr(d.Get("allow_auto_merge").(bool)),
+		DeleteBranchOnMerge: github.Ptr(d.Get("delete_branch_on_merge").(bool)),
+		AutoInit:            github.Ptr(d.Get("auto_init").(bool)),
+		LicenseTemplate:     github.Ptr(d.Get("license_template").(string)),
+		GitignoreTemplate:   github.Ptr(d.Get("gitignore_template").(string)),
+		Archived:            github.Ptr(d.Get("archived").(bool)),
+		Topics:              expandStringList(d.Get("topics").(*schema.Set).List()),
+		AllowUpdateBranch:   github.Ptr(d.Get("allow_update_branch").(bool)),
+		SecurityAndAnalysis: calculateSecurityAndAnalysis(d),
 	}
 
 	// only configure merge commit if we are in commit merge strategy
@@ -634,6 +633,15 @@ func resourceGithubRepositoryObject(d *schema.ResourceData) *github.Repository {
 		if allowForking, ok := d.GetOkExists("allow_forking"); ok { //nolint:staticcheck,SA1019 // We sometimes need to use GetOkExists for booleans
 			if val, ok := allowForking.(bool); ok {
 				repository.AllowForking = github.Ptr(val)
+			}
+		}
+	}
+
+	// only configure web commit signoff if explicitly set in the configuration
+	if d.IsNewResource() || d.HasChange("web_commit_signoff_required") {
+		if webCommitSignoffRequired, ok := d.GetOkExists("web_commit_signoff_required"); ok { //nolint:staticcheck,SA1019 // We sometimes need to use GetOkExists for booleans
+			if val, ok := webCommitSignoffRequired.(bool); ok {
+				repository.WebCommitSignoffRequired = github.Ptr(val)
 			}
 		}
 	}
@@ -947,20 +955,6 @@ func resourceGithubRepositoryUpdate(ctx context.Context, d *schema.ResourceData,
 	owner := meta.(*Owner).name
 	ctx = context.WithValue(ctx, ctxId, d.Id())
 
-	// When the organization has "Require sign off on web-based commits" enabled,
-	// the API doesn't allow you to send `web_commit_signoff_required` in order to
-	// update the repository with this field or it will throw a 422 error.
-	// As a workaround, we check if the organization requires it, and if so,
-	// we remove the field from the request.
-	if d.HasChange("web_commit_signoff_required") && meta.(*Owner).IsOrganization {
-		organization, _, err := client.Organizations.Get(ctx, owner)
-		if err == nil {
-			if organization != nil && organization.GetWebCommitSignoffRequired() {
-				repoReq.WebCommitSignoffRequired = nil
-			}
-		}
-	}
-
 	repo, _, err := client.Repositories.Edit(ctx, owner, repoName, repoReq)
 	if err != nil {
 		return diag.FromErr(err)
@@ -1043,8 +1037,6 @@ func resourceGithubRepositoryDelete(ctx context.Context, d *schema.ResourceData,
 				return diag.FromErr(err)
 			}
 			repoReq := resourceGithubRepositoryObject(d)
-			// Always remove `web_commit_signoff_required` when archiving, to avoid 422 error
-			repoReq.WebCommitSignoffRequired = nil
 			log.Printf("[DEBUG] Archiving repository on delete: %s/%s", owner, repoName)
 			_, _, err := client.Repositories.Edit(ctx, owner, repoName, repoReq)
 			return diag.FromErr(err)
