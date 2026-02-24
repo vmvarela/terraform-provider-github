@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/go-github/v82/github"
+	"github.com/google/go-github/v83/github"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -50,29 +50,32 @@ func resourceGithubEnterpriseCostCenterUsersCreate(ctx context.Context, d *schem
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	id, err := buildID(enterpriseSlug, costCenterID)
+	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	d.SetId(id)
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeUser {
+			return diag.Errorf("cost center %q already has users assigned; import the existing assignments first or remove them manually", costCenterID)
+		}
+	}
 
 	desiredUsersSet := d.Get("usernames").(*schema.Set)
 	toAdd := expandStringList(desiredUsersSet.List())
 
-	if len(toAdd) > 0 {
-		tflog.Info(ctx, "Adding users to cost center", map[string]any{
-			"enterprise_slug": enterpriseSlug,
-			"cost_center_id":  costCenterID,
-			"count":           len(toAdd),
-		})
+	tflog.Info(ctx, "Adding users to cost center", map[string]any{
+		"enterprise_slug": enterpriseSlug,
+		"cost_center_id":  costCenterID,
+		"count":           len(toAdd),
+	})
 
-		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
-			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
-				return diags
-			}
+	for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
+		if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Users: batch}); diags.HasError() {
+			return diags
 		}
 	}
 
+	d.SetId(costCenterID)
 	return nil
 }
 
@@ -86,28 +89,27 @@ func resourceGithubEnterpriseCostCenterUsersUpdate(ctx context.Context, d *schem
 		return diag.FromErr(err)
 	}
 
-	currentUsers := make(map[string]bool)
+	diff := make(map[string]bool)
 	for _, ccResource := range cc.Resources {
 		if ccResource != nil && ccResource.Type == CostCenterResourceTypeUser {
-			currentUsers[ccResource.Name] = true
+			diff[ccResource.Name] = false
 		}
 	}
 
-	desiredUsersSet := d.Get("usernames").(*schema.Set)
-	desiredUsers := make(map[string]bool)
-	for _, username := range desiredUsersSet.List() {
-		desiredUsers[username.(string)] = true
-	}
-
-	var toAdd, toRemove []string
-	for user := range desiredUsers {
-		if !currentUsers[user] {
-			toAdd = append(toAdd, user)
+	var toAdd []string
+	for _, user := range d.Get("usernames").(*schema.Set).List() {
+		name := user.(string)
+		if _, exists := diff[name]; exists {
+			diff[name] = true
+		} else {
+			toAdd = append(toAdd, name)
 		}
 	}
-	for user := range currentUsers {
-		if !desiredUsers[user] {
-			toRemove = append(toRemove, user)
+
+	var toRemove []string
+	for name, keep := range diff {
+		if !keep {
+			toRemove = append(toRemove, name)
 		}
 	}
 
@@ -179,8 +181,20 @@ func resourceGithubEnterpriseCostCenterUsersDelete(ctx context.Context, d *schem
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	usernamesSet := d.Get("usernames").(*schema.Set)
-	usernames := expandStringList(usernamesSet.List())
+	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
+	if err != nil {
+		if errIs404(err) {
+			return nil
+		}
+		return diag.FromErr(err)
+	}
+
+	var usernames []string
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeUser {
+			usernames = append(usernames, ccResource.Name)
+		}
+	}
 
 	if len(usernames) > 0 {
 		tflog.Info(ctx, "Removing all users from cost center", map[string]any{
@@ -205,6 +219,7 @@ func resourceGithubEnterpriseCostCenterUsersImport(ctx context.Context, d *schem
 		return nil, fmt.Errorf("invalid import ID %q: expected format <enterprise_slug>:<cost_center_id>", d.Id())
 	}
 
+	d.SetId(costCenterID)
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return nil, err
 	}

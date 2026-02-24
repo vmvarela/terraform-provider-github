@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/go-github/v82/github"
+	"github.com/google/go-github/v83/github"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -50,29 +50,32 @@ func resourceGithubEnterpriseCostCenterOrganizationsCreate(ctx context.Context, 
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	id, err := buildID(enterpriseSlug, costCenterID)
+	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	d.SetId(id)
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeOrg {
+			return diag.Errorf("cost center %q already has organizations assigned; import the existing assignments first or remove them manually", costCenterID)
+		}
+	}
 
 	desiredOrgsSet := d.Get("organization_logins").(*schema.Set)
 	toAdd := expandStringList(desiredOrgsSet.List())
 
-	if len(toAdd) > 0 {
-		tflog.Info(ctx, "Adding organizations to cost center", map[string]any{
-			"enterprise_slug": enterpriseSlug,
-			"cost_center_id":  costCenterID,
-			"count":           len(toAdd),
-		})
+	tflog.Info(ctx, "Adding organizations to cost center", map[string]any{
+		"enterprise_slug": enterpriseSlug,
+		"cost_center_id":  costCenterID,
+		"count":           len(toAdd),
+	})
 
-		for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
-			if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
-				return diags
-			}
+	for _, batch := range chunkStringSlice(toAdd, maxCostCenterResourcesPerRequest) {
+		if diags := retryCostCenterAddResources(ctx, client, enterpriseSlug, costCenterID, github.CostCenterResourceRequest{Organizations: batch}); diags.HasError() {
+			return diags
 		}
 	}
 
+	d.SetId(costCenterID)
 	return nil
 }
 
@@ -86,28 +89,27 @@ func resourceGithubEnterpriseCostCenterOrganizationsUpdate(ctx context.Context, 
 		return diag.FromErr(err)
 	}
 
-	currentOrgs := make(map[string]bool)
+	diff := make(map[string]bool)
 	for _, ccResource := range cc.Resources {
 		if ccResource != nil && ccResource.Type == CostCenterResourceTypeOrg {
-			currentOrgs[ccResource.Name] = true
+			diff[ccResource.Name] = false
 		}
 	}
 
-	desiredOrgsSet := d.Get("organization_logins").(*schema.Set)
-	desiredOrgs := make(map[string]bool)
-	for _, org := range desiredOrgsSet.List() {
-		desiredOrgs[org.(string)] = true
-	}
-
-	var toAdd, toRemove []string
-	for org := range desiredOrgs {
-		if !currentOrgs[org] {
-			toAdd = append(toAdd, org)
+	var toAdd []string
+	for _, org := range d.Get("organization_logins").(*schema.Set).List() {
+		name := org.(string)
+		if _, exists := diff[name]; exists {
+			diff[name] = true
+		} else {
+			toAdd = append(toAdd, name)
 		}
 	}
-	for org := range currentOrgs {
-		if !desiredOrgs[org] {
-			toRemove = append(toRemove, org)
+
+	var toRemove []string
+	for name, keep := range diff {
+		if !keep {
+			toRemove = append(toRemove, name)
 		}
 	}
 
@@ -179,8 +181,20 @@ func resourceGithubEnterpriseCostCenterOrganizationsDelete(ctx context.Context, 
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 	costCenterID := d.Get("cost_center_id").(string)
 
-	organizationsSet := d.Get("organization_logins").(*schema.Set)
-	organizations := expandStringList(organizationsSet.List())
+	cc, _, err := client.Enterprise.GetCostCenter(ctx, enterpriseSlug, costCenterID)
+	if err != nil {
+		if errIs404(err) {
+			return nil
+		}
+		return diag.FromErr(err)
+	}
+
+	var organizations []string
+	for _, ccResource := range cc.Resources {
+		if ccResource != nil && ccResource.Type == CostCenterResourceTypeOrg {
+			organizations = append(organizations, ccResource.Name)
+		}
+	}
 
 	if len(organizations) > 0 {
 		tflog.Info(ctx, "Removing all organizations from cost center", map[string]any{
@@ -205,6 +219,7 @@ func resourceGithubEnterpriseCostCenterOrganizationsImport(ctx context.Context, 
 		return nil, fmt.Errorf("invalid import ID %q: expected format <enterprise_slug>:<cost_center_id>", d.Id())
 	}
 
+	d.SetId(costCenterID)
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return nil, err
 	}
