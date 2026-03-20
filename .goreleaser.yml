@@ -1,5 +1,6 @@
-# Visit https://goreleaser.com for documentation on how to customize this
-# behavior.
+# GoReleaser configuration for vmvarela/github (Terraform Registry + OpenTofu Registry).
+# Published under the namespace vmvarela/github using CalVer (vYY.MM.N).
+# See RELEASE.md for the full release process.
 version: 2
 
 env:
@@ -7,7 +8,6 @@ env:
 
 before:
   hooks:
-    # this is just an example and not a requirement for provider building/publishing
     - go mod tidy
 
 builds:
