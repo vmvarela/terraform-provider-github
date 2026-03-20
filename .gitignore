@@ -38,3 +38,8 @@ terraform-provider-github
 .env
 *_rsa
 *_rsa.pub
+
+# local agent instructions
+AGENTS.md
+.agents/
+skills-lock.json
