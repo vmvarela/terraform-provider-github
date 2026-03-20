@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - main
+      - master
       - release-v*
   pull_request:
     branches:
       - main
+      - master
       - release-v*
 
 concurrency:
