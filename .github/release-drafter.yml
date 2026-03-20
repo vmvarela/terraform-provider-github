@@ -42,15 +42,12 @@ autolabeler:
     title:
       - '/^spike(\(.+\))?!?:/i'
 version-resolver:
-  major:
-    labels:
-      - "breaking"
-  minor:
-    labels:
-      - "type:feature"
   patch:
     labels:
+      - "breaking"
+      - "type:feature"
       - "type:bug"
       - "type:chore"
       - "type:docs"
+      - "type:spike"
   default: patch
