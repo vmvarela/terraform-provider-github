@@ -5,11 +5,33 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-github/v89/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
+
+// importEnterpriseTeamSelector preserves the selector used in the import ID.
+func importEnterpriseTeamSelector(d *schema.ResourceData, enterpriseSlug, selector string) error {
+	if strings.TrimSpace(enterpriseSlug) == "" || strings.TrimSpace(selector) == "" {
+		return fmt.Errorf("enterprise and team selector must not be empty")
+	}
+	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
+		return err
+	}
+	id, err := strconv.Atoi(selector)
+	if err == nil {
+		if id <= 0 {
+			return fmt.Errorf("team ID must be positive: %q", selector)
+		}
+		return d.Set("team_id", id)
+	}
+	if strings.Trim(selector, "0123456789") == "" {
+		return fmt.Errorf("invalid team ID %q: %w", selector, err)
+	}
+	return d.Set("team_slug", selector)
+}
 
 // buildEnterpriseTeamMembershipID creates an ID for enterprise team membership resources.
 // Uses "/" as separator because team slugs contain ":" (e.g., "ent:team-name").
@@ -92,6 +114,10 @@ func resolveStoredEnterpriseTeam(meta *Owner, ctx context.Context, enterpriseSlu
 	}
 	if id, ok := d.GetOk("team_id"); ok {
 		teamID, _ := id.(int)
+		// A numeric import ID has no slug hint until the first refresh.
+		if slug == strconv.Itoa(teamID) {
+			slug = ""
+		}
 		return findEnterpriseTeamByIdentity(meta, ctx, enterpriseSlug, slug, int64(teamID))
 	}
 	// Import and legacy state do not yet contain a numeric identity.

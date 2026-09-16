@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
 	"github.com/hashicorp/terraform-plugin-testing/statecheck"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
@@ -311,4 +312,58 @@ resource "github_enterprise_team_organizations" "test" {
 			{Config: config(name+"-renamed", strings.ToUpper(orgB)), PlanOnly: true},
 		},
 	})
+}
+
+func TestAccGithubEnterpriseTeamNumericImports(t *testing.T) {
+	for _, kind := range []string{"membership", "organizations"} {
+		t.Run(kind, func(t *testing.T) {
+			value := os.Getenv("ENTERPRISE_TEST_USER")
+			argument := "username"
+			if kind == "organizations" {
+				value = os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
+				argument = "organization_slugs"
+			}
+			if value == "" {
+				t.Skip("the corresponding ENTERPRISE_TEST_USER or ENTERPRISE_TEST_ORGANIZATION fixture is required")
+			}
+			assignment := fmt.Sprintf("%s = %q", argument, value)
+			if kind == "organizations" {
+				assignment = fmt.Sprintf("%s = [%q]", argument, value)
+			}
+			address := "github_enterprise_team_" + kind + ".test"
+			config := fmt.Sprintf(`
+resource "github_enterprise_team" "test" {
+ enterprise_slug = %q
+ name = %q
+ organization_selection_type = "selected"
+}
+resource "github_enterprise_team_%s" "test" {
+ enterprise_slug = %q
+ team_id = github_enterprise_team.test.team_id
+ %s
+}
+`, testAccConf.enterpriseSlug, testResourcePrefix+acctest.RandString(5), kind, testAccConf.enterpriseSlug, assignment)
+			resource.Test(t, resource.TestCase{
+				PreCheck: func() { skipUnlessEnterprise(t) }, ProviderFactories: providerFactories,
+				Steps: []resource.TestStep{
+					{Config: config},
+					{
+						ResourceName: address, ImportState: true, ImportStateVerify: true, ImportStatePersist: true,
+						ImportStateIdFunc: func(s *terraform.State) (string, error) {
+							team := s.RootModule().Resources["github_enterprise_team.test"]
+							if team == nil || team.Primary == nil {
+								return "", fmt.Errorf("enterprise team missing from test state")
+							}
+							id := testAccConf.enterpriseSlug + "/" + team.Primary.ID
+							if kind == "membership" {
+								id += "/" + value
+							}
+							return id, nil
+						},
+					},
+					{Config: config, PlanOnly: true},
+				},
+			})
+		})
+	}
 }

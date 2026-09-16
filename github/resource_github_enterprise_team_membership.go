@@ -19,7 +19,16 @@ func resourceGithubEnterpriseTeamMembership() *schema.Resource {
 		ReadContext:   resourceGithubEnterpriseTeamMembershipRead,
 		DeleteContext: resourceGithubEnterpriseTeamMembershipDelete,
 		Importer: &schema.ResourceImporter{
-			StateContext: schema.ImportStatePassthroughContext,
+			StateContext: func(_ context.Context, d *schema.ResourceData, _ any) ([]*schema.ResourceData, error) {
+				enterprise, selector, _, err := parseEnterpriseTeamMembershipID(d.Id())
+				if err != nil {
+					return nil, err
+				}
+				if err := importEnterpriseTeamSelector(d, enterprise, selector); err != nil {
+					return nil, err
+				}
+				return []*schema.ResourceData{d}, nil
+			},
 		},
 
 		Schema: map[string]*schema.Schema{
