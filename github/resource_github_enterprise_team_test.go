@@ -348,7 +348,8 @@ resource "github_enterprise_team_%s" "test" {
 				Steps: []resource.TestStep{
 					{Config: config},
 					{
-						ResourceName: address, ImportState: true, ImportStateVerify: true, ImportStatePersist: true,
+						// Import blocks verify that importing produces no additional changes.
+						ResourceName: address, ImportState: true, ImportStateKind: resource.ImportBlockWithID,
 						ImportStateIdFunc: func(s *terraform.State) (string, error) {
 							team := s.RootModule().Resources["github_enterprise_team.test"]
 							if team == nil || team.Primary == nil {
@@ -361,7 +362,6 @@ resource "github_enterprise_team_%s" "test" {
 							return id, nil
 						},
 					},
-					{Config: config, PlanOnly: true},
 				},
 			})
 		})
