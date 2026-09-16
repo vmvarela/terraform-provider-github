@@ -574,3 +574,77 @@ func TestEnterpriseTeamOrganizationsCaseInsensitive(t *testing.T) {
 		})
 	}
 }
+
+func TestEnterpriseTeamDependentImportSelectors(t *testing.T) {
+	for name, r := range map[string]*schema.Resource{
+		"membership": resourceGithubEnterpriseTeamMembership(), "organizations": resourceGithubEnterpriseTeamOrganizations(),
+	} {
+		for _, numeric := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/numeric=%v", name, numeric), func(t *testing.T) {
+				owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, req *http.Request) {
+					switch req.URL.Path {
+					case "/enterprises/ent/teams":
+						fmt.Fprint(w, `[{"id":42,"slug":"ent:team"}]`)
+					case "/enterprises/ent/teams/ent:team":
+						fmt.Fprint(w, `{"id":42,"slug":"ent:team"}`)
+					case "/enterprises/ent/teams/ent:team/organizations":
+						fmt.Fprint(w, `[{"login":"org-a"}]`)
+					case "/enterprises/ent/teams/ent:team/memberships/user":
+						fmt.Fprint(w, `{"id":7,"login":"user"}`)
+					default:
+						t.Errorf("unexpected request: %s", req.URL)
+						http.NotFound(w, req)
+					}
+				})
+				selector := "ent:team"
+				config := map[string]any{"enterprise_slug": "ent"}
+				if numeric {
+					selector = "42"
+					config["team_id"] = 42
+				} else {
+					config["team_slug"] = selector
+				}
+				id := "ent/" + selector
+				expectedID := "ent/ent:team"
+				if name == "membership" {
+					id += "/user"
+					expectedID += "/user"
+					config["username"] = "user"
+				} else {
+					config["organization_slugs"] = []any{"org-a"}
+				}
+				d := schema.TestResourceDataRaw(t, r.Schema, map[string]any{})
+				d.SetId(id)
+				if _, err := r.Importer.StateContext(t.Context(), d, owner); err != nil {
+					t.Fatal(err)
+				}
+				if diags := r.ReadContext(t.Context(), d, owner); diags.HasError() {
+					t.Fatal(diags)
+				}
+				if d.Id() != expectedID || d.Get("resolved_team_id") != 42 {
+					t.Fatalf("incorrect imported state: %#v", d.State().Attributes)
+				}
+				diff, err := r.Diff(t.Context(), d.State(), terraform.NewResourceConfigRaw(config), owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff != nil && !diff.Empty() {
+					t.Fatalf("import requires changes: %#v", diff.Attributes)
+				}
+			})
+		}
+		for _, selector := range []string{"0", "-1", "999999999999999999999999", ""} {
+			t.Run(name+"/invalid/"+selector, func(t *testing.T) {
+				d := schema.TestResourceDataRaw(t, r.Schema, map[string]any{})
+				id := "ent/" + selector
+				if name == "membership" {
+					id += "/user"
+				}
+				d.SetId(id)
+				if _, err := r.Importer.StateContext(t.Context(), d, nil); err == nil {
+					t.Fatalf("accepted invalid import %q", id)
+				}
+			})
+		}
+	}
+}
