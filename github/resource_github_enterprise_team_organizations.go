@@ -35,22 +35,28 @@ func resourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 				Type:             schema.TypeString,
 				Optional:         true,
 				ForceNew:         true,
-				Description:      "The slug of the enterprise team.",
+				Description:      "The slug of the enterprise team. Specify exactly one of team_slug or team_id.",
 				ExactlyOneOf:     []string{"team_slug", "team_id"},
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
+			"resolved_team_id": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "The stable numeric identity of the team, retained across renames even when team_slug is configured.",
+			},
 			"team_id": {
-				Type:         schema.TypeInt,
-				Optional:     true,
-				ForceNew:     true,
-				Description:  "The ID of the enterprise team.",
-				ExactlyOneOf: []string{"team_slug", "team_id"},
+				Type:             schema.TypeInt,
+				Optional:         true,
+				ForceNew:         true,
+				Description:      "The positive numeric ID of the enterprise team. Specify exactly one of team_slug or team_id.",
+				ExactlyOneOf:     []string{"team_slug", "team_id"},
+				ValidateDiagFunc: validation.ToDiagFunc(validation.IntAtLeast(1)),
 			},
 			"organization_slugs": {
 				Type:        schema.TypeSet,
 				Required:    true,
-				Description: "Set of organization slugs that the enterprise team should be assigned to.",
-				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "Non-empty set of non-blank organization slugs that the enterprise team should be assigned to.",
+				Elem:        &schema.Schema{Type: schema.TypeString, ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty))},
 				Set:         schema.HashString,
 				MinItems:    1,
 			},
@@ -98,6 +104,10 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 
 	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, team.Slug))
 
+	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
+		return diag.FromErr(err)
+	}
+
 	// Only set team_slug or team_id based on what user provided
 	if _, ok := d.GetOk("team_slug"); ok {
 		if err := d.Set("team_slug", team.Slug); err != nil {
@@ -118,6 +128,17 @@ func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schem
 		return diag.FromErr(err)
 	}
 
+	owner, _ := meta.(*Owner)
+	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	if team == nil {
+		d.SetId("")
+		return nil
+	}
+	teamSlug = team.Slug
+
 	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSlug)
 	if err != nil {
 		var ghErr *github.ErrorResponse
@@ -129,6 +150,11 @@ func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schem
 	}
 
 	slugs := organizationSlugs(orgs)
+
+	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, teamSlug))
+	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
+		return diag.FromErr(err)
+	}
 
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return diag.FromErr(err)
@@ -158,6 +184,16 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 	if err != nil {
 		return diag.FromErr(err)
 	}
+
+	owner, _ := meta.(*Owner)
+	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	if team == nil {
+		return diag.Errorf("enterprise team no longer exists")
+	}
+	teamSlug = team.Slug
 
 	if d.HasChange("organization_slugs") {
 		oldVal, newVal := d.GetChange("organization_slugs")
@@ -190,6 +226,7 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 		}
 	}
 
+	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, teamSlug))
 	return nil
 }
 
@@ -199,6 +236,16 @@ func resourceGithubEnterpriseTeamOrganizationsDelete(ctx context.Context, d *sch
 	if err != nil {
 		return diag.FromErr(err)
 	}
+
+	owner, _ := meta.(*Owner)
+	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	if team == nil {
+		return nil
+	}
+	teamSlug = team.Slug
 
 	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSlug)
 	if err != nil {

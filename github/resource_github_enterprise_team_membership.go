@@ -34,16 +34,22 @@ func resourceGithubEnterpriseTeamMembership() *schema.Resource {
 				Type:             schema.TypeString,
 				Optional:         true,
 				ForceNew:         true,
-				Description:      "The slug of the enterprise team.",
+				Description:      "The slug of the enterprise team. Specify exactly one of team_slug or team_id.",
 				ExactlyOneOf:     []string{"team_slug", "team_id"},
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
+			"resolved_team_id": {
+				Type:        schema.TypeInt,
+				Computed:    true,
+				Description: "The stable numeric identity of the team, retained across renames even when team_slug is configured.",
+			},
 			"team_id": {
-				Type:         schema.TypeInt,
-				Optional:     true,
-				ForceNew:     true,
-				Description:  "The ID of the enterprise team.",
-				ExactlyOneOf: []string{"team_slug", "team_id"},
+				Type:             schema.TypeInt,
+				Optional:         true,
+				ForceNew:         true,
+				Description:      "The positive numeric ID of the enterprise team. Specify exactly one of team_slug or team_id.",
+				ExactlyOneOf:     []string{"team_slug", "team_id"},
+				ValidateDiagFunc: validation.ToDiagFunc(validation.IntAtLeast(1)),
 			},
 			"username": {
 				Type:             schema.TypeString,
@@ -81,6 +87,10 @@ func resourceGithubEnterpriseTeamMembershipCreate(ctx context.Context, d *schema
 
 	d.SetId(buildEnterpriseTeamMembershipID(enterpriseSlug, team.Slug, username))
 
+	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
+		return diag.FromErr(err)
+	}
+
 	// Only set team_slug or team_id based on what user provided
 	if _, ok := d.GetOk("team_slug"); ok {
 		if err := d.Set("team_slug", team.Slug); err != nil {
@@ -107,20 +117,16 @@ func resourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema.R
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if v, ok := d.GetOk("team_id"); ok {
-		teamID := int64(v.(int))
-		if teamID > 0 {
-			team, findErr := findEnterpriseTeamByID(meta.(*Owner), ctx, enterpriseSlug, teamID)
-			if findErr != nil {
-				return diag.FromErr(findErr)
-			}
-			if team == nil {
-				d.SetId("")
-				return nil
-			}
-			teamSlug = team.Slug
-		}
+	owner, _ := meta.(*Owner)
+	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	if err != nil {
+		return diag.FromErr(err)
 	}
+	if team == nil {
+		d.SetId("")
+		return nil
+	}
+	teamSlug = team.Slug
 
 	user, resp, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, teamSlug, username)
 	if err != nil {
@@ -133,6 +139,11 @@ func resourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema.R
 			d.SetId("")
 			return nil
 		}
+		return diag.FromErr(err)
+	}
+
+	d.SetId(buildEnterpriseTeamMembershipID(enterpriseSlug, teamSlug, username))
+	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -169,19 +180,15 @@ func resourceGithubEnterpriseTeamMembershipDelete(ctx context.Context, d *schema
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if v, ok := d.GetOk("team_id"); ok {
-		teamID := int64(v.(int))
-		if teamID > 0 {
-			team, findErr := findEnterpriseTeamByID(meta.(*Owner), ctx, enterpriseSlug, teamID)
-			if findErr != nil {
-				return diag.FromErr(findErr)
-			}
-			if team == nil {
-				return nil
-			}
-			teamSlug = team.Slug
-		}
+	owner, _ := meta.(*Owner)
+	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	if err != nil {
+		return diag.FromErr(err)
 	}
+	if team == nil {
+		return nil
+	}
+	teamSlug = team.Slug
 
 	resp, err := client.Enterprise.RemoveTeamMember(ctx, enterpriseSlug, teamSlug, username)
 	if err != nil {

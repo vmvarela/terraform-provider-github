@@ -2,7 +2,9 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/google/go-github/v89/github"
@@ -65,6 +67,40 @@ func resolveEnterpriseTeam(meta *Owner, ctx context.Context, enterpriseSlug stri
 		return team, err
 	}
 	return findEnterpriseTeamByID(meta, ctx, enterpriseSlug, int64(d.Get("team_id").(int)))
+}
+
+// findEnterpriseTeamByIdentity treats the slug as a hint, never as proof of identity.
+func findEnterpriseTeamByIdentity(meta *Owner, ctx context.Context, enterpriseSlug, slug string, id int64) (*github.EnterpriseTeam, error) {
+	if slug != "" {
+		team, _, err := meta.v3client.Enterprise.GetTeam(ctx, enterpriseSlug, slug)
+		if err != nil {
+			var ghErr *github.ErrorResponse
+			if !errors.As(err, &ghErr) || ghErr.Response == nil || ghErr.Response.StatusCode != http.StatusNotFound {
+				return nil, err
+			}
+		} else if team != nil && team.ID == id {
+			return team, nil
+		}
+	}
+	return findEnterpriseTeamByID(meta, ctx, enterpriseSlug, id)
+}
+
+func resolveStoredEnterpriseTeam(meta *Owner, ctx context.Context, enterpriseSlug, slug string, d *schema.ResourceData) (*github.EnterpriseTeam, error) {
+	if id, ok := d.GetOk("resolved_team_id"); ok {
+		teamID, _ := id.(int)
+		return findEnterpriseTeamByIdentity(meta, ctx, enterpriseSlug, slug, int64(teamID))
+	}
+	if id, ok := d.GetOk("team_id"); ok {
+		teamID, _ := id.(int)
+		return findEnterpriseTeamByIdentity(meta, ctx, enterpriseSlug, slug, int64(teamID))
+	}
+	// Import and legacy state do not yet contain a numeric identity.
+	team, _, err := meta.v3client.Enterprise.GetTeam(ctx, enterpriseSlug, slug)
+	var ghErr *github.ErrorResponse
+	if errors.As(err, &ghErr) && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	return team, err
 }
 
 // organizationSlugs extracts the non-empty logins of the given organizations.
