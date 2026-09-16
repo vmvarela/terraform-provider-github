@@ -40,7 +40,7 @@ resource "github_enterprise_team_organizations" "assignments" {
 ### Required
 
 - `enterprise_slug` (String) The slug of the enterprise.
-- `organization_slugs` (Set of String) Non-empty set of non-blank organization slugs that the enterprise team should be assigned to.
+- `organization_slugs` (Set of String) Non-empty set of non-blank organization slugs that the enterprise team should be assigned to. Slugs are case-insensitive and stored in lowercase.
 
 ### Optional
 

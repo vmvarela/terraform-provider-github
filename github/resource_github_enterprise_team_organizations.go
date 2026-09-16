@@ -55,10 +55,14 @@ func resourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 			"organization_slugs": {
 				Type:        schema.TypeSet,
 				Required:    true,
-				Description: "Non-empty set of non-blank organization slugs that the enterprise team should be assigned to.",
-				Elem:        &schema.Schema{Type: schema.TypeString, ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty))},
-				Set:         schema.HashString,
-				MinItems:    1,
+				Description: "Non-empty set of non-blank organization slugs that the enterprise team should be assigned to. Slugs are case-insensitive and stored in lowercase.",
+				Elem: &schema.Schema{
+					Type:             schema.TypeString,
+					ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
+					StateFunc:        func(v any) string { slug, _ := v.(string); return strings.ToLower(slug) },
+				},
+				Set:      func(v any) int { slug, _ := v.(string); return schema.HashString(strings.ToLower(slug)) },
+				MinItems: 1,
 			},
 		},
 	}
@@ -94,7 +98,8 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 	orgSlugsSet := d.Get("organization_slugs").(*schema.Set)
 	orgSlugs := make([]string, 0, orgSlugsSet.Len())
 	for _, item := range orgSlugsSet.List() {
-		orgSlugs = append(orgSlugs, item.(string))
+		slug, _ := item.(string)
+		orgSlugs = append(orgSlugs, strings.ToLower(slug))
 	}
 
 	_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, team.Slug, orgSlugs)
@@ -150,6 +155,9 @@ func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schem
 	}
 
 	slugs := organizationSlugs(orgs)
+	for i, slug := range slugs {
+		slugs[i] = strings.ToLower(slug)
+	}
 
 	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, teamSlug))
 	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
@@ -206,7 +214,8 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 		if toAdd.Len() > 0 {
 			addSlugs := make([]string, 0, toAdd.Len())
 			for _, item := range toAdd.List() {
-				addSlugs = append(addSlugs, item.(string))
+				slug, _ := item.(string)
+				addSlugs = append(addSlugs, strings.ToLower(slug))
 			}
 			_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, teamSlug, addSlugs)
 			if err != nil {
@@ -217,7 +226,8 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 		if toRemove.Len() > 0 {
 			removeSlugs := make([]string, 0, toRemove.Len())
 			for _, item := range toRemove.List() {
-				removeSlugs = append(removeSlugs, item.(string))
+				slug, _ := item.(string)
+				removeSlugs = append(removeSlugs, strings.ToLower(slug))
 			}
 			_, _, err = client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
 			if err != nil {
