@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
@@ -483,6 +484,92 @@ func TestEnterpriseTeamDependentsCreateStoresIdentity(t *testing.T) {
 			}
 			if d.Id() == "" || d.Get("resolved_team_id") != 42 {
 				t.Fatalf("missing persisted identity: %#v", d.State().Attributes)
+			}
+		})
+	}
+}
+
+func TestEnterpriseTeamOrganizationsCaseInsensitive(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		before, after []any
+		writes        int
+	}{
+		{"case only", []any{"org-a"}, []any{"Org-A"}, 0},
+		{"duplicates", []any{"org-a"}, []any{"org-a", "Org-A"}, 0},
+		{"legacy casing", []any{"Org-A"}, []any{"org-a"}, 0},
+		{"real delta", []any{"Org-A", "org-b"}, []any{"org-a", "Org-C"}, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := resourceGithubEnterpriseTeamOrganizations()
+			legacy := resourceGithubEnterpriseTeamOrganizations()
+			legacy.Schema["organization_slugs"].Set = schema.HashString
+			element, _ := legacy.Schema["organization_slugs"].Elem.(*schema.Schema)
+			element.StateFunc = nil
+			old := schema.TestResourceDataRaw(t, legacy.Schema, map[string]any{
+				"enterprise_slug": "ent", "team_id": 42, "resolved_team_id": 42, "organization_slugs": tc.before,
+			})
+			old.SetId("ent/ent:team")
+			config := terraform.NewResourceConfigRaw(map[string]any{
+				"enterprise_slug": "ent", "team_id": 42, "organization_slugs": tc.after,
+			})
+			diff, err := r.Diff(t.Context(), old.State(), config, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writes := 0
+			owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, req *http.Request) {
+				switch req.URL.Path {
+				case "/enterprises/ent/teams/ent:team":
+					fmt.Fprint(w, `{"id":42,"slug":"ent:team"}`)
+				case "/enterprises/ent/teams/ent:team/organizations":
+					if tc.writes == 2 {
+						fmt.Fprint(w, `[{"login":"Org-A"},{"login":"Org-C"}]`)
+					} else {
+						fmt.Fprint(w, `[{"login":"Org-A"}]`)
+					}
+				case "/enterprises/ent/teams/ent:team/organizations/add", "/enterprises/ent/teams/ent:team/organizations/remove":
+					writes++
+					var body struct {
+						Slugs []string `json:"organization_slugs"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					want := "org-c"
+					if req.URL.Path == "/enterprises/ent/teams/ent:team/organizations/remove" {
+						want = "org-b"
+					}
+					if tc.writes == 0 || len(body.Slugs) != 1 || body.Slugs[0] != want {
+						t.Errorf("unexpected mutation: %s %v", req.URL.Path, body.Slugs)
+					}
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					t.Errorf("unexpected request %s", req.URL)
+					http.NotFound(w, req)
+				}
+			})
+			state := old.State()
+			if diff != nil && !diff.Empty() {
+				var diags diag.Diagnostics
+				state, diags = r.Apply(t.Context(), state, diff, owner)
+				if diags.HasError() {
+					t.Fatal(diags)
+				}
+			}
+			if writes != tc.writes {
+				t.Fatalf("writes = %d, want %d", writes, tc.writes)
+			}
+			refreshed := r.Data(state)
+			if diags := r.ReadContext(t.Context(), refreshed, owner); diags.HasError() {
+				t.Fatal(diags)
+			}
+			diff, err = r.Diff(t.Context(), refreshed.State(), config, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff != nil && !diff.Empty() {
+				t.Fatalf("nonempty plan after refresh: %#v", diff.Attributes)
 			}
 		})
 	}

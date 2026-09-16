@@ -3,6 +3,7 @@ package github
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/compare"
@@ -307,7 +308,7 @@ resource "github_enterprise_team_organizations" "test" {
 					statecheck.ExpectKnownValue("github_enterprise_team_organizations.test", tfjsonpath.New("organization_slugs"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(orgB)})),
 				},
 			},
-			{Config: config(name+"-renamed", orgB), PlanOnly: true},
+			{Config: config(name+"-renamed", strings.ToUpper(orgB)), PlanOnly: true},
 		},
 	})
 }
