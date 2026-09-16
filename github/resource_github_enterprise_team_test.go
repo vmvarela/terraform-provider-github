@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-testing/compare"
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
@@ -240,5 +241,73 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 				},
 			},
 		})
+	})
+}
+
+func TestAccGithubEnterpriseTeamRenameAndClearDescription(t *testing.T) {
+	name := testResourcePrefix + acctest.RandString(5)
+	config := func(name, description string) string {
+		return fmt.Sprintf(`
+resource "github_enterprise_team" "test" {
+  enterprise_slug = %q
+  name = %q
+  %s
+}
+`, testAccConf.enterpriseSlug, name, description)
+	}
+	sameTeamID := statecheck.CompareValue(compare.ValuesSame())
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessEnterprise(t) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{
+			{Config: config(name, `description = "Remove this description"`), ConfigStateChecks: []statecheck.StateCheck{sameTeamID.AddStateValue("github_enterprise_team.test", tfjsonpath.New("team_id"))}},
+			{
+				Config: config(name+"-renamed", ""),
+				ConfigStateChecks: []statecheck.StateCheck{
+					sameTeamID.AddStateValue("github_enterprise_team.test", tfjsonpath.New("team_id")),
+					statecheck.ExpectKnownValue("github_enterprise_team.test", tfjsonpath.New("name"), knownvalue.StringExact(name+"-renamed")),
+					statecheck.ExpectKnownValue("github_enterprise_team.test", tfjsonpath.New("description"), knownvalue.StringExact("")),
+				},
+			},
+			{Config: config(name+"-renamed", ""), PlanOnly: true},
+		},
+	})
+}
+
+func TestAccGithubEnterpriseTeamOrganizationsUpdateAndRename(t *testing.T) {
+	orgA, orgB := os.Getenv("ENTERPRISE_TEST_ORGANIZATION"), os.Getenv("ENTERPRISE_TEST_ORGANIZATION_2")
+	if orgA == "" || orgB == "" || orgA == orgB {
+		t.Skip("two distinct organizations in the test enterprise are required: ENTERPRISE_TEST_ORGANIZATION and ENTERPRISE_TEST_ORGANIZATION_2")
+	}
+	name := testResourcePrefix + acctest.RandString(5)
+	config := func(teamName, org string) string {
+		return fmt.Sprintf(`
+resource "github_enterprise_team" "test" {
+  enterprise_slug = %q
+  name = %q
+  organization_selection_type = "selected"
+}
+resource "github_enterprise_team_organizations" "test" {
+  enterprise_slug = %q
+  team_id = github_enterprise_team.test.team_id
+  organization_slugs = [%q]
+}
+`, testAccConf.enterpriseSlug, teamName, testAccConf.enterpriseSlug, org)
+	}
+	sameTeamID := statecheck.CompareValue(compare.ValuesSame())
+	resource.Test(t, resource.TestCase{
+		PreCheck:          func() { skipUnlessEnterprise(t) },
+		ProviderFactories: providerFactories,
+		Steps: []resource.TestStep{
+			{Config: config(name, orgA), ConfigStateChecks: []statecheck.StateCheck{sameTeamID.AddStateValue("github_enterprise_team_organizations.test", tfjsonpath.New("resolved_team_id"))}},
+			{
+				Config: config(name+"-renamed", orgB),
+				ConfigStateChecks: []statecheck.StateCheck{
+					sameTeamID.AddStateValue("github_enterprise_team_organizations.test", tfjsonpath.New("resolved_team_id")),
+					statecheck.ExpectKnownValue("github_enterprise_team_organizations.test", tfjsonpath.New("organization_slugs"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(orgB)})),
+				},
+			},
+			{Config: config(name+"-renamed", orgB), PlanOnly: true},
+		},
 	})
 }

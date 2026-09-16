@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/google/go-github/v89/github"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -25,9 +25,17 @@ func resourceGithubEnterpriseTeam() *schema.Resource {
 		DeleteContext: resourceGithubEnterpriseTeamDelete,
 		Importer:      &schema.ResourceImporter{StateContext: resourceGithubEnterpriseTeamImport},
 
-		CustomizeDiff: customdiff.ComputedIf("slug", func(_ context.Context, d *schema.ResourceDiff, meta any) bool {
-			return d.HasChange("name")
-		}),
+		CustomizeDiff: customdiff.All(
+			customdiff.ComputedIf("slug", func(_ context.Context, d *schema.ResourceDiff, _ any) bool {
+				return d.HasChange("name")
+			}),
+			// The SDK cannot encode an explicit null group_id to unlink an IdP group.
+			customdiff.ForceNewIfChange("group_id", func(_ context.Context, old, next, _ any) bool {
+				oldGroup, _ := old.(string)
+				nextGroup, _ := next.(string)
+				return oldGroup != "" && nextGroup == ""
+			}),
+		),
 
 		Schema: map[string]*schema.Schema{
 			"enterprise_slug": {
@@ -35,13 +43,13 @@ func resourceGithubEnterpriseTeam() *schema.Resource {
 				Required:         true,
 				ForceNew:         true,
 				Description:      "The slug of the enterprise (e.g. from the enterprise URL).",
-				ValidateDiagFunc: validation.ToDiagFunc(validation.StringLenBetween(1, 255)),
+				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringLenBetween(1, 255), validation.StringIsNotWhiteSpace)),
 			},
 			"name": {
 				Type:             schema.TypeString,
 				Required:         true,
 				Description:      "The name of the enterprise team.",
-				ValidateDiagFunc: validation.ToDiagFunc(validation.StringLenBetween(1, 255)),
+				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringLenBetween(1, 255), validation.StringIsNotWhiteSpace)),
 			},
 			"description": {
 				Type:        schema.TypeString,
@@ -58,7 +66,7 @@ func resourceGithubEnterpriseTeam() *schema.Resource {
 			"group_id": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: "The ID of the IdP group to assign team membership with.",
+				Description: "The ID of the IdP group to assign team membership with. Removing an existing group ID replaces the team; changing it to another group ID updates the team in place.",
 			},
 			"slug": {
 				Type:        schema.TypeString,
@@ -83,7 +91,7 @@ func resourceGithubEnterpriseTeamCreate(ctx context.Context, d *schema.ResourceD
 	orgSelection := d.Get("organization_selection_type").(string)
 	groupID := d.Get("group_id").(string)
 
-	req := buildEnterpriseTeamRequest(name, description, orgSelection, groupID)
+	req := buildEnterpriseTeamCreateRequest(name, description, orgSelection, groupID)
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
 	te, _, err := client.Enterprise.CreateTeam(ctx, enterpriseSlug, req)
@@ -105,7 +113,6 @@ func resourceGithubEnterpriseTeamCreate(ctx context.Context, d *schema.ResourceD
 }
 
 func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
-	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 
 	teamID, err := strconv.ParseInt(d.Id(), 10, 64)
@@ -115,33 +122,16 @@ func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceDat
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
 
-	// Try to fetch by slug first (faster), but if the team was renamed we need
-	// to fall back to listing all teams and matching by numeric ID.
-	var te *github.EnterpriseTeam
-	if slug, ok := d.GetOk("slug"); ok {
-		if s := strings.TrimSpace(slug.(string)); s != "" {
-			candidate, _, getErr := client.Enterprise.GetTeam(ctx, enterpriseSlug, s)
-			if getErr == nil {
-				te = candidate
-			} else {
-				ghErr := &github.ErrorResponse{}
-				if errors.As(getErr, &ghErr) && ghErr.Response.StatusCode != http.StatusNotFound {
-					return diag.FromErr(getErr)
-				}
-			}
-		}
+	owner, _ := meta.(*Owner)
+	slug, _ := d.Get("slug").(string)
+	te, err := findEnterpriseTeamByIdentity(owner, ctx, enterpriseSlug, slug, teamID)
+	if err != nil {
+		return diag.FromErr(err)
 	}
-
 	if te == nil {
-		te, err = findEnterpriseTeamByID(meta.(*Owner), ctx, enterpriseSlug, teamID)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		if te == nil {
-			log.Printf("[INFO] Removing enterprise team %s/%s from state because it no longer exists in GitHub", enterpriseSlug, d.Id())
-			d.SetId("")
-			return nil
-		}
+		tflog.Info(ctx, "Removing missing enterprise team from state", map[string]any{"team_id": teamID})
+		d.SetId("")
+		return nil
 	}
 
 	if err = d.Set("enterprise_slug", enterpriseSlug); err != nil {
@@ -191,14 +181,21 @@ func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceDat
 func resourceGithubEnterpriseTeamUpdate(ctx context.Context, d *schema.ResourceData, meta any) diag.Diagnostics {
 	client := meta.(*Owner).v3client
 	enterpriseSlug := d.Get("enterprise_slug").(string)
-	teamSlug := d.Get("slug").(string)
-
-	name := d.Get("name").(string)
-	description := d.Get("description").(string)
-	orgSelection := d.Get("organization_selection_type").(string)
-	groupID := d.Get("group_id").(string)
-
-	req := buildEnterpriseTeamRequest(name, description, orgSelection, groupID)
+	teamID, err := strconv.ParseInt(d.Id(), 10, 64)
+	if err != nil {
+		return diag.FromErr(unconvertibleIdErr(d.Id(), err))
+	}
+	owner, _ := meta.(*Owner)
+	slug, _ := d.Get("slug").(string)
+	team, err := findEnterpriseTeamByIdentity(owner, ctx, enterpriseSlug, slug, teamID)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	if team == nil {
+		return diag.Errorf("enterprise team %d no longer exists", teamID)
+	}
+	teamSlug := team.Slug
+	req := buildEnterpriseTeamUpdateRequest(d)
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
 	te, _, err := client.Enterprise.UpdateTeam(ctx, enterpriseSlug, teamSlug, req)
@@ -219,24 +216,23 @@ func resourceGithubEnterpriseTeamDelete(ctx context.Context, d *schema.ResourceD
 	enterpriseSlug := d.Get("enterprise_slug").(string)
 
 	ctx = context.WithValue(ctx, ctxId, d.Id())
-	teamSlug := strings.TrimSpace(d.Get("slug").(string))
-	if teamSlug == "" {
-		teamID, err := strconv.ParseInt(d.Id(), 10, 64)
-		if err != nil {
-			return diag.FromErr(unconvertibleIdErr(d.Id(), err))
-		}
-		te, err := findEnterpriseTeamByID(meta.(*Owner), ctx, enterpriseSlug, teamID)
-		if err != nil {
-			return diag.FromErr(err)
-		}
-		if te == nil {
-			return nil
-		}
-		teamSlug = te.Slug
+	teamID, err := strconv.ParseInt(d.Id(), 10, 64)
+	if err != nil {
+		return diag.FromErr(unconvertibleIdErr(d.Id(), err))
 	}
+	owner, _ := meta.(*Owner)
+	slug, _ := d.Get("slug").(string)
+	team, err := findEnterpriseTeamByIdentity(owner, ctx, enterpriseSlug, slug, teamID)
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	if team == nil {
+		return nil
+	}
+	teamSlug := team.Slug
+	tflog.Info(ctx, "Deleting enterprise team", map[string]any{"team_id": teamID, "slug": teamSlug})
 
-	log.Printf("[INFO] Deleting enterprise team: %s/%s (%s)", enterpriseSlug, teamSlug, d.Id())
-	_, err := client.Enterprise.DeleteTeam(ctx, enterpriseSlug, teamSlug)
+	_, err = client.Enterprise.DeleteTeam(ctx, enterpriseSlug, teamSlug)
 	if err != nil {
 		// Already gone? That's fine, we wanted it deleted anyway.
 		ghErr := &github.ErrorResponse{}
@@ -249,21 +245,36 @@ func resourceGithubEnterpriseTeamDelete(ctx context.Context, d *schema.ResourceD
 	return nil
 }
 
-// buildEnterpriseTeamRequest builds the create/update request body shared by
-// Create and Update.
-func buildEnterpriseTeamRequest(name, description, orgSelection, groupID string) github.EnterpriseTeamCreateOrUpdateRequest {
+// buildEnterpriseTeamCreateRequest omits unset optional values on creation.
+func buildEnterpriseTeamCreateRequest(name, description, orgSelection, groupID string) github.EnterpriseTeamCreateOrUpdateRequest {
 	req := github.EnterpriseTeamCreateOrUpdateRequest{
-		Name: name,
-		//nolint:modernize // new() accepts a type, not an expression.
-		OrganizationSelectionType: github.Ptr(orgSelection),
+		Name:                      name,
+		OrganizationSelectionType: new(orgSelection),
 	}
 	if description != "" {
-		//nolint:modernize // new() accepts a type, not an expression.
-		req.Description = github.Ptr(description)
+		req.Description = new(description)
 	}
 	if groupID != "" {
-		//nolint:modernize // new() accepts a type, not an expression.
-		req.GroupID = github.Ptr(groupID)
+		req.GroupID = new(groupID)
+	}
+	return req
+}
+
+// buildEnterpriseTeamUpdateRequest sends changed optional values, including an empty description.
+func buildEnterpriseTeamUpdateRequest(d *schema.ResourceData) github.EnterpriseTeamCreateOrUpdateRequest {
+	name, _ := d.Get("name").(string)
+	req := github.EnterpriseTeamCreateOrUpdateRequest{Name: name}
+	if d.HasChange("description") {
+		description, _ := d.Get("description").(string)
+		req.Description = new(description)
+	}
+	if d.HasChange("organization_selection_type") {
+		selection, _ := d.Get("organization_selection_type").(string)
+		req.OrganizationSelectionType = new(selection)
+	}
+	groupID, _ := d.Get("group_id").(string)
+	if d.HasChange("group_id") && groupID != "" {
+		req.GroupID = new(groupID)
 	}
 	return req
 }
