@@ -1,0 +1,1 @@
+terraform import github_enterprise_team_organizations.assignments enterprise-slug/ent:platform
