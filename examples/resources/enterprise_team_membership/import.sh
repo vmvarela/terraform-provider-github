@@ -1,0 +1,1 @@
+terraform import github_enterprise_team_membership.member enterprise-slug/ent:platform/username
