@@ -290,6 +290,153 @@ func TestEnterpriseTeamDependentsImportAndLegacyRefresh(t *testing.T) {
 	}
 }
 
+// Regression: a team_slug-configured assignment resource must survive an
+// out-of-band team rename in place — the plan must not require replacement
+// (which fails to create because assignments already exist), and the update
+// must resolve the renamed team by its stable numeric ID and apply the
+// assignment delta against the new slug.
+func TestEnterpriseTeamOrganizationsTeamSlugRenameUpdatesInPlace(t *testing.T) {
+	resource := resourceGithubEnterpriseTeamOrganizations()
+	// Old state reflects a refresh after the rename: ID and team_slug follow
+	// the new slug, resolved_team_id preserves the numeric identity.
+	old := schema.TestResourceDataRaw(t, resource.Schema, map[string]any{
+		"enterprise_slug": "ent", "team_slug": "ent:renamed", "resolved_team_id": 42,
+		"organization_slugs": []any{"org-a", "org-b"},
+	})
+	old.SetId("ent/ent:renamed")
+	config := terraform.NewResourceConfigRaw(map[string]any{
+		"enterprise_slug": "ent", "team_slug": "ent:old", "organization_slugs": []any{"org-b", "org-c"},
+	})
+	diff, err := resource.Diff(t.Context(), old.State(), config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff == nil || diff.Empty() {
+		t.Fatal("expected nonempty diff for stale team_slug config")
+	}
+	if diff.RequiresNew() {
+		t.Fatal("team_slug change forced replacement; renamed team would be destroyed and recreation would fail")
+	}
+	mutations := 0
+	owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/enterprises/ent/teams/ent:renamed":
+			fmt.Fprint(w, `{"id":42,"slug":"ent:renamed"}`)
+		case "/enterprises/ent/teams/ent:old":
+			// The identity guard probes the stale config slug; it must 404 so
+			// the rename resolution proceeds against the stable team ID.
+			http.NotFound(w, r)
+		case "/enterprises/ent/teams/ent:renamed/organizations/add", "/enterprises/ent/teams/ent:renamed/organizations/remove":
+			var body struct {
+				Slugs []string `json:"organization_slugs"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			want := "org-c"
+			if r.URL.Path == "/enterprises/ent/teams/ent:renamed/organizations/remove" {
+				want = "org-a"
+			}
+			if len(body.Slugs) != 1 || body.Slugs[0] != want {
+				t.Errorf("incorrect delta: %v, want %s", body.Slugs, want)
+			}
+			mutations++
+			fmt.Fprint(w, `[]`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+			http.NotFound(w, r)
+		}
+	})
+	state, diags := resource.Apply(t.Context(), old.State(), diff, owner)
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	if mutations != 2 {
+		t.Fatalf("got %d mutations, want 2", mutations)
+	}
+	if state.ID != "ent/ent:renamed" {
+		t.Fatalf("update lost renamed identity: %s", state.ID)
+	}
+	if got := state.Attributes["resolved_team_id"]; got != "42" {
+		t.Fatalf("lost numeric identity: %q", got)
+	}
+}
+
+// Regression: changing team_slug to a different existing team must be rejected
+// with an error diagnostic and zero add/remove mutations, instead of silently
+// applying the delta to the previously-resolved team.
+func TestEnterpriseTeamOrganizationsRejectTeamSwitch(t *testing.T) {
+	mutations := 0
+	owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			mutations++
+			t.Errorf("mutated team on rejected switch: %s %s", r.Method, r.URL)
+		}
+		switch r.URL.Path {
+		case "/enterprises/ent/teams/ent:a":
+			fmt.Fprint(w, `{"id":42,"slug":"ent:a"}`)
+		case "/enterprises/ent/teams/ent:b":
+			fmt.Fprint(w, `{"id":99,"slug":"ent:b"}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+			http.NotFound(w, r)
+		}
+	})
+	d := schema.TestResourceDataRaw(t, resourceGithubEnterpriseTeamOrganizations().Schema, map[string]any{
+		"enterprise_slug": "ent", "team_slug": "ent:b", "resolved_team_id": 42,
+		"organization_slugs": []any{"org-a"},
+	})
+	d.SetId("ent/ent:a")
+	diags := resourceGithubEnterpriseTeamOrganizationsUpdate(t.Context(), d, owner)
+	if !diags.HasError() {
+		t.Fatal("expected error when team_slug switches to a different existing team")
+	}
+	if mutations != 0 {
+		t.Fatalf("got %d mutations, want 0", mutations)
+	}
+}
+
+// Regression: only a typed HTTP 404 from the identity-guard team_slug probe
+// counts as a stale rename; any other probe failure (403, 5xx) must surface
+// as an error diagnostic with zero add/remove mutations instead of silently
+// proceeding against the managed team.
+func TestEnterpriseTeamOrganizationsProbeErrorsAreFatal(t *testing.T) {
+	for _, code := range []int{http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(fmt.Sprintf("%d", code), func(t *testing.T) {
+			mutations := 0
+			owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					mutations++
+					t.Errorf("mutated team after probe failure: %s %s", r.Method, r.URL)
+					return
+				}
+				switch r.URL.Path {
+				case "/enterprises/ent/teams/ent:a":
+					fmt.Fprint(w, `{"id":42,"slug":"ent:a"}`)
+				case "/enterprises/ent/teams/ent:b":
+					w.WriteHeader(code)
+					fmt.Fprint(w, `{"message":"error"}`)
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+					http.NotFound(w, r)
+				}
+			})
+			d := schema.TestResourceDataRaw(t, resourceGithubEnterpriseTeamOrganizations().Schema, map[string]any{
+				"enterprise_slug": "ent", "team_slug": "ent:b", "resolved_team_id": 42,
+				"organization_slugs": []any{"org-a"},
+			})
+			d.SetId("ent/ent:a")
+			diags := resourceGithubEnterpriseTeamOrganizationsUpdate(t.Context(), d, owner)
+			if !diags.HasError() {
+				t.Fatalf("expected error diagnostics for probe HTTP %d, got %v", code, diags)
+			}
+			if mutations != 0 {
+				t.Fatalf("got %d mutations, want 0", mutations)
+			}
+		})
+	}
+}
+
 func TestEnterpriseTeamOrganizationsUpdateDeltaAfterRename(t *testing.T) {
 	resource := resourceGithubEnterpriseTeamOrganizations()
 	old := schema.TestResourceDataRaw(t, resource.Schema, map[string]any{

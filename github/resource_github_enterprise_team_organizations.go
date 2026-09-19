@@ -43,8 +43,7 @@ func resourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 			"team_slug": {
 				Type:             schema.TypeString,
 				Optional:         true,
-				ForceNew:         true,
-				Description:      "The slug of the enterprise team. Specify exactly one of team_slug or team_id.",
+				Description:      "The slug of the enterprise team. Specify exactly one of team_slug or team_id. Not ForceNew so an out-of-band team rename updates in place, keeping the stable numeric identity.",
 				ExactlyOneOf:     []string{"team_slug", "team_id"},
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
@@ -209,6 +208,33 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 		return diag.Errorf("enterprise team no longer exists")
 	}
 	teamSlug = team.Slug
+
+	// Identity guard: team_slug is not ForceNew so an out-of-band rename updates
+	// in place against the stable resolved_team_id, but a config change pointing
+	// at a different existing team must be rejected before any add/remove
+	// mutation instead of silently re-pointing the assignments.
+	if _, ok := d.GetOk("team_slug"); ok {
+		requestedSlug := strings.TrimSpace(d.Get("team_slug").(string))
+		resolvedID := int64(d.Get("resolved_team_id").(int))
+		if requestedSlug != "" && resolvedID > 0 && requestedSlug != teamSlug {
+			requested, _, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, requestedSlug)
+			if err != nil {
+				// Only a typed 404 means the requested slug no longer exists
+				// (stale config after an out-of-band rename) and the update
+				// may proceed with the stable identity. Any other lookup
+				// failure (403, 5xx, context, malformed) must not be treated
+				// as a rename — surface it and skip all mutations.
+				ghErr, ok := errors.AsType[*github.ErrorResponse](err)
+				if !ok || ghErr.Response == nil || ghErr.Response.StatusCode != http.StatusNotFound {
+					return diag.FromErr(err)
+				}
+			} else if requested.ID != resolvedID {
+				return diag.Errorf(
+					"team_slug %q resolves to a different enterprise team (ID %d, slug %q) than the managed team (resolved_team_id %d); to manage a different team, import it instead of changing team_slug",
+					requestedSlug, requested.ID, requested.Slug, resolvedID)
+			}
+		}
+	}
 
 	if d.HasChange("organization_slugs") {
 		oldVal, newVal := d.GetChange("organization_slugs")
