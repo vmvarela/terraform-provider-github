@@ -73,28 +73,17 @@ func dataSourceGithubEnterpriseTeamsRead(ctx context.Context, d *schema.Resource
 
 	flat := make([]any, 0, len(teams))
 	for _, team := range teams {
-		m := map[string]any{
-			"team_id": int(team.ID),
-			"slug":    team.Slug,
-			"name":    team.Name,
-		}
-		if team.Description != nil {
-			m["description"] = *team.Description
-		} else {
-			m["description"] = ""
-		}
-		orgSel := ""
-		if team.OrganizationSelectionType != nil {
-			orgSel = *team.OrganizationSelectionType
-		}
+		orgSel := team.GetOrganizationSelectionType()
 		if orgSel == "" {
 			orgSel = "disabled"
 		}
-		m["organization_selection_type"] = orgSel
-		if team.GroupID != "" {
-			m["group_id"] = team.GroupID
-		} else {
-			m["group_id"] = ""
+		m := map[string]any{
+			"team_id":                     int(team.GetID()),
+			"slug":                        team.GetSlug(),
+			"name":                        team.GetName(),
+			"description":                 team.GetDescription(),
+			"organization_selection_type": orgSel,
+			"group_id":                    team.GetGroupID(),
 		}
 		flat = append(flat, m)
 	}

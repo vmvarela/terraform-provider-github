@@ -2,7 +2,6 @@ package github
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/compare"
@@ -15,6 +14,7 @@ import (
 
 func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 	t.Run("retrieves team by slug without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -49,6 +49,7 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 	})
 
 	t.Run("retrieves team by id without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -83,12 +84,14 @@ func TestAccGithubEnterpriseTeamDataSource(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
-	orgSlug := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
+	skipWithoutAccConf(t)
+	orgSlug := testAccConf.testEnterpriseOrg
 	if orgSlug == "" {
-		t.Skip("ENTERPRISE_TEST_ORGANIZATION not set")
+		t.Skip("GH_TEST_ENTERPRISE_ORG not set")
 	}
 
 	t.Run("retrieves team organizations without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -131,12 +134,14 @@ func TestAccGithubEnterpriseTeamOrganizationsDataSource(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
-	username := os.Getenv("ENTERPRISE_TEST_USER")
+	skipWithoutAccConf(t)
+	username := testAccConf.testEnterpriseUser
 	if username == "" {
-		t.Skip("ENTERPRISE_TEST_USER not set")
+		t.Skip("GH_TEST_ENTERPRISE_USER not set")
 	}
 
 	t.Run("retrieves team membership without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
