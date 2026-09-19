@@ -45,7 +45,7 @@ resource "github_enterprise_team_organizations" "assignments" {
 ### Optional
 
 - `team_id` (Number) The positive numeric ID of the enterprise team. Specify exactly one of team_slug or team_id.
-- `team_slug` (String) The slug of the enterprise team. Specify exactly one of team_slug or team_id.
+- `team_slug` (String) The slug of the enterprise team. Specify exactly one of team_slug or team_id. Not ForceNew so an out-of-band team rename updates in place, keeping the stable numeric identity.
 
 ### Read-Only
 
