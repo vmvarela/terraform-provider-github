@@ -133,7 +133,7 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID, orgSlug),
 					ConfigStateChecks: []statecheck.StateCheck{
 						statecheck.ExpectKnownValue("github_enterprise_team_organizations.test", tfjsonpath.New("organization_slugs"), knownvalue.SetSizeExact(1)),
-						statecheck.ExpectKnownValue("github_enterprise_team_organizations.test", tfjsonpath.New("organization_slugs"), knownvalue.SetPartial([]knownvalue.Check{knownvalue.StringExact(orgSlug)})),
+						statecheck.ExpectKnownValue("github_enterprise_team_organizations.test", tfjsonpath.New("organization_slugs"), knownvalue.SetPartial([]knownvalue.Check{knownvalue.StringExact(strings.ToLower(orgSlug))})),
 					},
 				},
 			},
@@ -315,7 +315,7 @@ resource "github_enterprise_team_organizations" "test" {
 				Config: config(name+"-renamed", orgB),
 				ConfigStateChecks: []statecheck.StateCheck{
 					sameTeamID.AddStateValue("github_enterprise_team_organizations.test", tfjsonpath.New("resolved_team_id")),
-					statecheck.ExpectKnownValue("github_enterprise_team_organizations.test", tfjsonpath.New("organization_slugs"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(orgB)})),
+					statecheck.ExpectKnownValue("github_enterprise_team_organizations.test", tfjsonpath.New("organization_slugs"), knownvalue.SetExact([]knownvalue.Check{knownvalue.StringExact(strings.ToLower(orgB))})),
 				},
 			},
 			{Config: config(name+"-renamed", strings.ToUpper(orgB)), PlanOnly: true},
