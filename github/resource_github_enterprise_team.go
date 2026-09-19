@@ -235,8 +235,7 @@ func resourceGithubEnterpriseTeamDelete(ctx context.Context, d *schema.ResourceD
 	_, err = client.Enterprise.DeleteTeam(ctx, enterpriseSlug, teamSlug)
 	if err != nil {
 		// Already gone? That's fine, we wanted it deleted anyway.
-		ghErr := &github.ErrorResponse{}
-		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
+		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			return nil
 		}
 		return diag.FromErr(err)

@@ -93,8 +93,7 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 	// A 404 here means the team has no assignments yet — treat as empty and proceed.
 	existing, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, team.Slug)
 	if err != nil {
-		var ghErr *github.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
+		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			existing = nil
 		} else {
 			return diag.FromErr(err)
@@ -155,8 +154,7 @@ func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schem
 
 	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSlug)
 	if err != nil {
-		var ghErr *github.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
+		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			d.SetId("")
 			return nil
 		}
@@ -268,8 +266,7 @@ func resourceGithubEnterpriseTeamOrganizationsDelete(ctx context.Context, d *sch
 
 	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSlug)
 	if err != nil {
-		var ghErr *github.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
+		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			return nil
 		}
 		return diag.FromErr(err)
@@ -280,8 +277,7 @@ func resourceGithubEnterpriseTeamOrganizationsDelete(ctx context.Context, d *sch
 	if len(removeSlugs) > 0 {
 		_, resp, err := client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
 		if err != nil {
-			var ghErr *github.ErrorResponse
-			if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
+			if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 				return nil
 			}
 			if resp != nil && resp.StatusCode == http.StatusNotFound {

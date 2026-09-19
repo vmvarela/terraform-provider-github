@@ -96,8 +96,7 @@ func findEnterpriseTeamByIdentity(meta *Owner, ctx context.Context, enterpriseSl
 	if slug != "" {
 		team, _, err := meta.v3client.Enterprise.GetTeam(ctx, enterpriseSlug, slug)
 		if err != nil {
-			var ghErr *github.ErrorResponse
-			if !errors.As(err, &ghErr) || ghErr.Response == nil || ghErr.Response.StatusCode != http.StatusNotFound {
+			if ghErr, ok := errors.AsType[*github.ErrorResponse](err); !ok || ghErr.Response == nil || ghErr.Response.StatusCode != http.StatusNotFound {
 				return nil, err
 			}
 		} else if team != nil && team.ID == id {
@@ -122,8 +121,7 @@ func resolveStoredEnterpriseTeam(meta *Owner, ctx context.Context, enterpriseSlu
 	}
 	// Import and legacy state do not yet contain a numeric identity.
 	team, _, err := meta.v3client.Enterprise.GetTeam(ctx, enterpriseSlug, slug)
-	var ghErr *github.ErrorResponse
-	if errors.As(err, &ghErr) && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
+	if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
 		return nil, nil
 	}
 	return team, err
@@ -133,8 +131,8 @@ func resolveStoredEnterpriseTeam(meta *Owner, ctx context.Context, enterpriseSlu
 func organizationSlugs(orgs []*github.Organization) []string {
 	slugs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
-		if org.Login != nil && *org.Login != "" {
-			slugs = append(slugs, *org.Login)
+		if login := org.GetLogin(); login != "" {
+			slugs = append(slugs, login)
 		}
 	}
 	return slugs

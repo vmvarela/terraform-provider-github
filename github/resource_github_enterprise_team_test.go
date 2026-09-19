@@ -2,7 +2,6 @@ package github
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -17,6 +16,7 @@ import (
 
 func TestAccGithubEnterpriseTeam(t *testing.T) {
 	t.Run("creates and updates resource without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -65,6 +65,7 @@ func TestAccGithubEnterpriseTeam(t *testing.T) {
 	})
 
 	t.Run("imports resource without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -98,12 +99,14 @@ func TestAccGithubEnterpriseTeam(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
-	orgSlug := os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
+	skipWithoutAccConf(t)
+	orgSlug := testAccConf.testEnterpriseOrg
 	if orgSlug == "" {
-		t.Skip("ENTERPRISE_TEST_ORGANIZATION not set")
+		t.Skip("GH_TEST_ENTERPRISE_ORG not set")
 	}
 
 	t.Run("assigns organizations to team without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -138,6 +141,7 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 	})
 
 	t.Run("imports resource without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -174,12 +178,14 @@ func TestAccGithubEnterpriseTeamOrganizations(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
-	username := os.Getenv("ENTERPRISE_TEST_USER")
+	skipWithoutAccConf(t)
+	username := testAccConf.testEnterpriseUser
 	if username == "" {
-		t.Skip("ENTERPRISE_TEST_USER not set")
+		t.Skip("GH_TEST_ENTERPRISE_USER not set")
 	}
 
 	t.Run("adds member to team without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -212,6 +218,7 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 	})
 
 	t.Run("imports resource without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{
@@ -247,6 +254,7 @@ func TestAccGithubEnterpriseTeamMembership(t *testing.T) {
 }
 
 func TestAccGithubEnterpriseTeamRenameAndClearDescription(t *testing.T) {
+	skipWithoutAccConf(t)
 	name := testResourcePrefix + acctest.RandString(5)
 	config := func(name, description string) string {
 		return fmt.Sprintf(`
@@ -277,9 +285,10 @@ resource "github_enterprise_team" "test" {
 }
 
 func TestAccGithubEnterpriseTeamOrganizationsUpdateAndRename(t *testing.T) {
-	orgA, orgB := os.Getenv("ENTERPRISE_TEST_ORGANIZATION"), os.Getenv("ENTERPRISE_TEST_ORGANIZATION_2")
+	skipWithoutAccConf(t)
+	orgA, orgB := testAccConf.testEnterpriseOrg, testAccConf.testEnterpriseOrg2
 	if orgA == "" || orgB == "" || orgA == orgB {
-		t.Skip("two distinct organizations in the test enterprise are required: ENTERPRISE_TEST_ORGANIZATION and ENTERPRISE_TEST_ORGANIZATION_2")
+		t.Skip("two distinct organizations in the test enterprise are required: GH_TEST_ENTERPRISE_ORG and GH_TEST_ENTERPRISE_ORG_2")
 	}
 	name := testResourcePrefix + acctest.RandString(5)
 	config := func(teamName, org string) string {
@@ -317,14 +326,15 @@ resource "github_enterprise_team_organizations" "test" {
 func TestAccGithubEnterpriseTeamNumericImports(t *testing.T) {
 	for _, kind := range []string{"membership", "organizations"} {
 		t.Run(kind, func(t *testing.T) {
-			value := os.Getenv("ENTERPRISE_TEST_USER")
+			skipWithoutAccConf(t)
+			value := testAccConf.testEnterpriseUser
 			argument := "username"
 			if kind == "organizations" {
-				value = os.Getenv("ENTERPRISE_TEST_ORGANIZATION")
+				value = testAccConf.testEnterpriseOrg
 				argument = "organization_slugs"
 			}
 			if value == "" {
-				t.Skip("the corresponding ENTERPRISE_TEST_USER or ENTERPRISE_TEST_ORGANIZATION fixture is required")
+				t.Skip("the corresponding GH_TEST_ENTERPRISE_USER or GH_TEST_ENTERPRISE_ORG fixture is required")
 			}
 			assignment := fmt.Sprintf("%s = %q", argument, value)
 			if kind == "organizations" {

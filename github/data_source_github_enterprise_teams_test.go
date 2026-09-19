@@ -13,6 +13,7 @@ import (
 
 func TestAccGithubEnterpriseTeamsDataSource(t *testing.T) {
 	t.Run("lists all enterprise teams without error", func(t *testing.T) {
+		skipWithoutAccConf(t)
 		randomID := acctest.RandString(5)
 
 		resource.Test(t, resource.TestCase{

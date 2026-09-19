@@ -89,7 +89,11 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 		te = found
 	}
 
-	d.SetId(buildTwoPartID(enterpriseSlug, strconv.FormatInt(te.ID, 10)))
+	id, err := buildID(enterpriseSlug, strconv.FormatInt(te.ID, 10))
+	if err != nil {
+		return diag.FromErr(err)
+	}
+	d.SetId(id)
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return diag.FromErr(err)
 	}
@@ -99,36 +103,21 @@ func dataSourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceD
 	if err := d.Set("team_id", int(te.ID)); err != nil {
 		return diag.FromErr(err)
 	}
-	if err := d.Set("name", te.Name); err != nil {
+	if err := d.Set("name", te.GetName()); err != nil {
 		return diag.FromErr(err)
 	}
-	if te.Description != nil {
-		if err := d.Set("description", *te.Description); err != nil {
-			return diag.FromErr(err)
-		}
-	} else {
-		if err := d.Set("description", ""); err != nil {
-			return diag.FromErr(err)
-		}
+	if err := d.Set("description", te.GetDescription()); err != nil {
+		return diag.FromErr(err)
 	}
-	orgSel := ""
-	if te.OrganizationSelectionType != nil {
-		orgSel = *te.OrganizationSelectionType
-	}
+	orgSel := te.GetOrganizationSelectionType()
 	if orgSel == "" {
 		orgSel = "disabled"
 	}
 	if err := d.Set("organization_selection_type", orgSel); err != nil {
 		return diag.FromErr(err)
 	}
-	if te.GroupID != "" {
-		if err := d.Set("group_id", te.GroupID); err != nil {
-			return diag.FromErr(err)
-		}
-	} else {
-		if err := d.Set("group_id", ""); err != nil {
-			return diag.FromErr(err)
-		}
+	if err := d.Set("group_id", te.GetGroupID()); err != nil {
+		return diag.FromErr(err)
 	}
 
 	return nil

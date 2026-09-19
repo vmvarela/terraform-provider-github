@@ -139,8 +139,7 @@ func resourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema.R
 
 	user, resp, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, teamSlug, username)
 	if err != nil {
-		var ghErr *github.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
+		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			d.SetId("")
 			return nil
 		}
@@ -201,8 +200,7 @@ func resourceGithubEnterpriseTeamMembershipDelete(ctx context.Context, d *schema
 
 	resp, err := client.Enterprise.RemoveTeamMember(ctx, enterpriseSlug, teamSlug, username)
 	if err != nil {
-		var ghErr *github.ErrorResponse
-		if errors.As(err, &ghErr) && ghErr.Response.StatusCode == http.StatusNotFound {
+		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response.StatusCode == http.StatusNotFound {
 			return nil
 		}
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
