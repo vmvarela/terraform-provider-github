@@ -51,13 +51,14 @@ func TestEnterpriseTeamReadRejectsReusedSlug(t *testing.T) {
 func TestEnterpriseTeamOrganizationsReadFollowsNumericID(t *testing.T) {
 	lookups := 0
 	owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/organizations") && r.Method == http.MethodGet {
+		// The read must hit exactly this numeric-ID endpoint.
+		if r.URL.Path == "/enterprises/ent/teams/42/organizations" && r.Method == http.MethodGet {
 			fmt.Fprint(w, `[{"login":"org-a"}]`)
 			return
 		}
-		// Any team lookup (slug or list) is forbidden.
+		// Any other request (team lookup, slug endpoint, ListTeams) is forbidden.
 		lookups++
-		t.Errorf("unexpected team lookup: %s %s", r.Method, r.URL)
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL)
 		http.NotFound(w, r)
 	})
 	d := schema.TestResourceDataRaw(t, resourceGithubEnterpriseTeamOrganizations().Schema, map[string]any{
@@ -382,32 +383,54 @@ func TestEnterpriseTeamOrganizationsTeamSlugRenameUpdatesInPlace(t *testing.T) {
 // Regression: a configured team_slug that no longer exists must fail the
 // update before any add/remove mutation instead of being treated as a rename
 // hint, and the failure must never fall back to a ListTeams ID->slug scan.
+// Both a stale unchanged slug alongside an org delta and a config transition
+// to the stale slug must be rejected the same way.
 func TestEnterpriseTeamOrganizationsRejectsNonexistentSlug(t *testing.T) {
-	mutations := 0
-	owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			mutations++
-			t.Errorf("mutated on rejected slug: %s %s", r.Method, r.URL)
-		}
-		switch r.URL.Path {
-		case "/enterprises/ent/teams/ent:gone":
-			http.NotFound(w, r)
-		default:
-			t.Errorf("unexpected request (no ListTeams fallback allowed): %s %s", r.Method, r.URL)
-			http.NotFound(w, r)
-		}
-	})
-	d := schema.TestResourceDataRaw(t, resourceGithubEnterpriseTeamOrganizations().Schema, map[string]any{
-		"enterprise_slug": "ent", "team_slug": "ent:gone", "resolved_team_id": 42,
-		"organization_slugs": []any{"org-a"},
-	})
-	d.SetId("ent/ent:old")
-	diags := resourceGithubEnterpriseTeamOrganizationsUpdate(t.Context(), d, owner)
-	if !diags.HasError() {
-		t.Fatal("expected error for nonexistent configured team_slug")
-	}
-	if mutations != 0 {
-		t.Fatalf("got %d mutations, want 0", mutations)
+	resource := resourceGithubEnterpriseTeamOrganizations()
+	for name, tc := range map[string]struct {
+		oldSlug, nextSlug string
+	}{
+		"stale slug with org delta":      {oldSlug: "ent:gone", nextSlug: "ent:gone"},
+		"stale slug after config rename": {oldSlug: "ent:old", nextSlug: "ent:gone"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			old := schema.TestResourceDataRaw(t, resource.Schema, map[string]any{
+				"enterprise_slug": "ent", "team_slug": tc.oldSlug, "resolved_team_id": 42,
+				"organization_slugs": []any{"org-a"},
+			})
+			old.SetId("ent/" + tc.oldSlug)
+			config := terraform.NewResourceConfigRaw(map[string]any{
+				"enterprise_slug": "ent", "team_slug": tc.nextSlug, "organization_slugs": []any{"org-b"},
+			})
+			diff, err := resource.Diff(t.Context(), old.State(), config, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutations := 0
+			owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					mutations++
+					t.Errorf("mutated on rejected slug: %s %s", r.Method, r.URL)
+				}
+				switch r.URL.Path {
+				case "/enterprises/ent/teams/ent:gone":
+					http.NotFound(w, r)
+				default:
+					t.Errorf("unexpected request (no ListTeams fallback allowed): %s %s", r.Method, r.URL)
+					http.NotFound(w, r)
+				}
+			})
+			_, diags := resource.Apply(t.Context(), old.State(), diff, owner)
+			if !diags.HasError() {
+				t.Fatal("expected error for nonexistent configured team_slug")
+			}
+			if mutations != 0 {
+				t.Fatalf("got %d mutations, want 0", mutations)
+			}
+			if got := resource.Data(old.State()).Get("resolved_team_id"); got != 42 {
+				t.Fatalf("failed update must leave the stored identity intact: %v", got)
+			}
+		})
 	}
 }
 
@@ -450,9 +473,9 @@ func TestEnterpriseTeamOrganizationsRejectTeamSwitch(t *testing.T) {
 // instead of silently proceeding against the managed team. Since the update
 // now mutates against the stored numeric identity, a 404 probe result is an
 // invalid configured slug — not a stale rename to recover from — and is
-// rejected too; that case is covered by
-// TestEnterpriseTeamOrganizationsRejectsNonexistentSlug, so this test asserts
-// the non-404 failures (403, 5xx) behave identically.
+// rejected too (covered by TestEnterpriseTeamOrganizationsRejectsNonexistentSlug);
+// this test asserts the non-404 failures (403, 5xx) surface verbatim, with the
+// diagnostics preserving the underlying HTTP status.
 func TestEnterpriseTeamOrganizationsProbeErrorsAreFatal(t *testing.T) {
 	for _, code := range []int{http.StatusForbidden, http.StatusInternalServerError} {
 		t.Run(fmt.Sprintf("%d", code), func(t *testing.T) {
@@ -482,6 +505,24 @@ func TestEnterpriseTeamOrganizationsProbeErrorsAreFatal(t *testing.T) {
 			diags := resourceGithubEnterpriseTeamOrganizationsUpdate(t.Context(), d, owner)
 			if !diags.HasError() {
 				t.Fatalf("expected error diagnostics for probe HTTP %d, got %v", code, diags)
+			}
+			// The raw probe failure must not be swallowed, mislabeled, or
+			// rewritten: the diagnostics must preserve the underlying HTTP
+			// status and must not claim the team does not exist.
+			preserved, mislabeled := false, false
+			for _, pdiag := range diags {
+				if strings.Contains(pdiag.Summary, fmt.Sprintf("%d", code)) {
+					preserved = true
+				}
+				if strings.Contains(pdiag.Summary, "does not exist in enterprise") {
+					mislabeled = true
+				}
+			}
+			if !preserved {
+				t.Fatalf("probe error diagnostics lost HTTP %d: %v", code, diags)
+			}
+			if mislabeled {
+				t.Fatalf("probe error diagnostics mislabel HTTP %d as nonexistent: %v", code, diags)
 			}
 			if mutations != 0 {
 				t.Fatalf("got %d mutations, want 0", mutations)
@@ -658,39 +699,69 @@ func TestEnterpriseTeamMutationsRejectReusedSlug(t *testing.T) {
 	}
 }
 
+// Regression: creates must persist the numeric identity, and create-time team
+// resolution must be minimal: the team_id selector needs no team lookup at all
+// (the dependent endpoints accept the numeric ID), while the team_slug
+// selector resolves with exactly one direct GetTeam — never a ListTeams scan.
 func TestEnterpriseTeamDependentsCreateStoresIdentity(t *testing.T) {
 	for name, resource := range map[string]*schema.Resource{
 		"membership":    resourceGithubEnterpriseTeamMembership(),
 		"organizations": resourceGithubEnterpriseTeamOrganizations(),
 	} {
-		t.Run(name, func(t *testing.T) {
-			owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/enterprises/ent/teams/ent:team":
-					fmt.Fprint(w, `{"id":42,"slug":"ent:team"}`)
-				case "/enterprises/ent/teams/42/memberships/user":
-					fmt.Fprint(w, `{"id":7,"login":"user"}`)
-				case "/enterprises/ent/teams/42/organizations", "/enterprises/ent/teams/42/organizations/add":
-					fmt.Fprint(w, `[]`)
-				default:
-					t.Errorf("unexpected request: %s", r.URL)
-					http.NotFound(w, r)
+		for _, selector := range []string{"team_slug", "team_id"} {
+			t.Run(name+"/"+selector, func(t *testing.T) {
+				getTeams := 0
+				owner := enterpriseTeamTestOwner(t, func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == "/enterprises/ent/teams/ent:team" {
+						getTeams++
+						fmt.Fprint(w, `{"id":42,"slug":"ent:team"}`)
+						return
+					}
+					// Dependent mutations must use the exact numeric endpoint;
+					// anything else (including ListTeams) is unexpected.
+					switch r.URL.Path {
+					case "/enterprises/ent/teams/42/memberships/user":
+						fmt.Fprint(w, `{"id":7,"login":"user"}`)
+					case "/enterprises/ent/teams/42/organizations", "/enterprises/ent/teams/42/organizations/add":
+						fmt.Fprint(w, `[]`)
+					default:
+						t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+						http.NotFound(w, r)
+					}
+				})
+				config := map[string]any{"enterprise_slug": "ent"}
+				if selector == "team_id" {
+					config[selector] = 42
+				} else {
+					config[selector] = "ent:team"
+				}
+				if name == "membership" {
+					config["username"] = "user"
+				} else {
+					config["organization_slugs"] = []any{"org-a"}
+				}
+				d := schema.TestResourceDataRaw(t, resource.Schema, config)
+				if diags := resource.CreateContext(t.Context(), d, owner); diags.HasError() {
+					t.Fatal(diags)
+				}
+				if selector == "team_slug" && getTeams != 1 {
+					t.Fatalf("team_slug create must use exactly one GetTeam, got %d", getTeams)
+				}
+				if selector == "team_id" && getTeams != 0 {
+					t.Fatalf("team_id create must not look the team up, got %d GetTeam calls", getTeams)
+				}
+				wantID := "ent/ent:team"
+				if selector == "team_id" {
+					wantID = "ent/42"
+				}
+				if name == "membership" {
+					wantID += "/user"
+				}
+				if d.Id() != wantID || d.Get("resolved_team_id") != 42 {
+					t.Fatalf("missing persisted identity: id=%q resolved=%v", d.Id(), d.Get("resolved_team_id"))
 				}
 			})
-			config := map[string]any{"enterprise_slug": "ent", "team_slug": "ent:team"}
-			if name == "membership" {
-				config["username"] = "user"
-			} else {
-				config["organization_slugs"] = []any{"org-a"}
-			}
-			d := schema.TestResourceDataRaw(t, resource.Schema, config)
-			if diags := resource.CreateContext(t.Context(), d, owner); diags.HasError() {
-				t.Fatal(diags)
-			}
-			if d.Id() == "" || d.Get("resolved_team_id") != 42 {
-				t.Fatalf("missing persisted identity: %#v", d.State().Attributes)
-			}
-		})
+		}
 	}
 }
 
