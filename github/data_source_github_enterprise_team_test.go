@@ -175,6 +175,7 @@ func TestAccGithubEnterpriseTeamMembershipDataSource(t *testing.T) {
 					ConfigStateChecks: []statecheck.StateCheck{
 						statecheck.ExpectKnownValue("data.github_enterprise_team_membership.test", tfjsonpath.New("id"), knownvalue.NotNull()),
 						statecheck.ExpectKnownValue("data.github_enterprise_team_membership.test", tfjsonpath.New("username"), knownvalue.StringExact(username)),
+						statecheck.CompareValuePairs("data.github_enterprise_team_membership.test", tfjsonpath.New("user_id"), "github_enterprise_team_membership.test", tfjsonpath.New("user_id"), compare.ValuesSame()),
 					},
 				},
 			},

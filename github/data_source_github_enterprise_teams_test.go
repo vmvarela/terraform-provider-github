@@ -35,16 +35,14 @@ func TestAccGithubEnterpriseTeamsDataSource(t *testing.T) {
 							enterprise_slug = data.github_enterprise.enterprise.slug
 							depends_on      = [github_enterprise_team.test]
 						}
+
+						output "created_team_listed" {
+							value = contains([for team in data.github_enterprise_teams.all.teams : team.team_id], github_enterprise_team.test.team_id)
+						}
 					`, testAccConf.enterpriseSlug, testResourcePrefix, randomID),
 					ConfigStateChecks: []statecheck.StateCheck{
 						statecheck.ExpectKnownValue("data.github_enterprise_teams.all", tfjsonpath.New("id"), knownvalue.NotNull()),
-						statecheck.ExpectKnownValue("data.github_enterprise_teams.all", tfjsonpath.New("teams"), knownvalue.ListPartial(map[int]knownvalue.Check{
-							0: knownvalue.ObjectPartial(map[string]knownvalue.Check{
-								"team_id": knownvalue.NotNull(),
-								"slug":    knownvalue.NotNull(),
-								"name":    knownvalue.NotNull(),
-							}),
-						})),
+						statecheck.ExpectKnownOutputValue("created_team_listed", knownvalue.Bool(true)),
 					},
 				},
 			},

@@ -216,12 +216,8 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 	}
 	teamSelector := strconv.FormatInt(teamID, 10)
 
-	// Identity guard: team_slug is not ForceNew so a configured slug change
-	// updates in place against the stable resolved_team_id, but the configured
-	// team_slug must exist and resolve to the managed team's numeric ID before
-	// any add/remove mutation. A nonexistent slug (404) is an invalid config,
-	// never a rename hint, and a slug resolving to another team must not
-	// silently re-point the assignments.
+	// Allow renamed slugs only if they still identify the managed team.
+	// Validate before mutations; a 404 does not prove a rename.
 	idSlug := teamSlug
 	if v, ok := d.GetOk("team_slug"); ok {
 		requestedSlug := strings.TrimSpace(v.(string))
@@ -230,10 +226,6 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 		}
 		requested, _, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, requestedSlug)
 		if err != nil {
-			// Every lookup failure rejects the update before any mutation,
-			// including a 404 (nonexistent slug is invalid config, not a
-			// rename). The underlying error is preserved verbatim so 403/5xx
-			// and network failures are not mislabeled as a missing team.
 			return diag.FromErr(err)
 		}
 		if requested == nil || requested.ID != teamID {

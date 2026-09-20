@@ -42,9 +42,14 @@ func buildEnterpriseTeamMembershipID(enterpriseSlug, teamSlug, username string) 
 
 // parseEnterpriseTeamMembershipID parses the ID for enterprise team membership resources.
 func parseEnterpriseTeamMembershipID(id string) (enterpriseSlug, teamSlug, username string, err error) {
-	parts := strings.SplitN(id, "/", 3)
+	parts := strings.Split(id, "/")
 	if len(parts) != 3 {
 		return "", "", "", fmt.Errorf("unexpected ID format (%q); expected enterprise_slug/team_slug/username", id)
+	}
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return "", "", "", fmt.Errorf("enterprise, team selector and username must not be empty: %q", id)
+		}
 	}
 	return parts[0], parts[1], parts[2], nil
 }
@@ -65,19 +70,25 @@ func parseEnterpriseTeamOrganizationsID(id string) (enterpriseSlug, teamSlug str
 	return parts[0], parts[1], nil
 }
 
-// findEnterpriseTeamByID lists all enterprise teams and returns the one matching the given ID.
-// This is needed because the API doesn't provide a direct lookup by numeric ID.
+// findEnterpriseTeamByID stops paging when it finds the requested team's metadata.
+// Unlike membership and assignment endpoints, GetTeam only documents slug lookups.
 func findEnterpriseTeamByID(meta *Owner, ctx context.Context, enterpriseSlug string, id int64) (*github.EnterpriseTeam, error) {
-	teams, err := listAllEnterpriseTeams(meta, ctx, enterpriseSlug)
-	if err != nil {
-		return nil, err
-	}
-	for _, team := range teams {
-		if team.ID == id {
-			return team, nil
+	opt := &github.ListOptions{PerPage: meta.maxPerPage}
+	for {
+		teams, resp, err := meta.v3client.Enterprise.ListTeams(ctx, enterpriseSlug, opt)
+		if err != nil {
+			return nil, err
 		}
+		for _, team := range teams {
+			if team.ID == id {
+				return team, nil
+			}
+		}
+		if resp.NextPage == 0 {
+			return nil, nil
+		}
+		opt.Page = resp.NextPage
 	}
-	return nil, nil
 }
 
 // storedEnterpriseTeamID returns the numeric team identity recorded in state,

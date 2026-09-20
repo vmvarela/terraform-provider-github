@@ -34,6 +34,7 @@ func TestEnterpriseTeamReadRejectsReusedSlug(t *testing.T) {
 	})
 	d := schema.TestResourceDataRaw(t, resourceGithubEnterpriseTeam().Schema, map[string]any{
 		"enterprise_slug": "ent", "name": "Old", "slug": "ent:old", "team_id": 42,
+		"description": "Old description", "group_id": "old-group", "organization_selection_type": "all",
 	})
 	d.SetId("42")
 	if diags := resourceGithubEnterpriseTeamRead(t.Context(), d, owner); diags.HasError() {
@@ -41,6 +42,9 @@ func TestEnterpriseTeamReadRejectsReusedSlug(t *testing.T) {
 	}
 	if d.Id() != "42" || d.Get("team_id") != 42 || d.Get("slug") != "ent:renamed" {
 		t.Fatalf("adopted wrong team: id=%s team_id=%v slug=%v", d.Id(), d.Get("team_id"), d.Get("slug"))
+	}
+	if d.Get("description") != "" || d.Get("group_id") != "" || d.Get("organization_selection_type") != "disabled" {
+		t.Fatal("read did not clear missing attributes or restore default selection")
 	}
 }
 
@@ -420,15 +424,18 @@ func TestEnterpriseTeamOrganizationsRejectsNonexistentSlug(t *testing.T) {
 					http.NotFound(w, r)
 				}
 			})
-			_, diags := resource.Apply(t.Context(), old.State(), diff, owner)
+			state, diags := resource.Apply(t.Context(), old.State(), diff, owner)
 			if !diags.HasError() {
 				t.Fatal("expected error for nonexistent configured team_slug")
 			}
 			if mutations != 0 {
 				t.Fatalf("got %d mutations, want 0", mutations)
 			}
-			if got := resource.Data(old.State()).Get("resolved_team_id"); got != 42 {
-				t.Fatalf("failed update must leave the stored identity intact: %v", got)
+			if state == nil {
+				t.Fatal("failed update lost resource state")
+			}
+			if state.ID != old.Id() || state.Attributes["resolved_team_id"] != "42" {
+				t.Fatalf("failed update changed identity: %#v", state)
 			}
 		})
 	}

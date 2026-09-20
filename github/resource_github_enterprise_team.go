@@ -140,14 +140,8 @@ func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceDat
 	if err = d.Set("name", te.Name); err != nil {
 		return diag.FromErr(err)
 	}
-	if te.Description != nil {
-		if err = d.Set("description", *te.Description); err != nil {
-			return diag.FromErr(err)
-		}
-	} else {
-		if err = d.Set("description", ""); err != nil {
-			return diag.FromErr(err)
-		}
+	if err = d.Set("description", te.GetDescription()); err != nil {
+		return diag.FromErr(err)
 	}
 	if err = d.Set("slug", te.Slug); err != nil {
 		return diag.FromErr(err)
@@ -155,24 +149,15 @@ func resourceGithubEnterpriseTeamRead(ctx context.Context, d *schema.ResourceDat
 	if err = d.Set("team_id", int(te.ID)); err != nil {
 		return diag.FromErr(err)
 	}
-	orgSelection := ""
-	if te.OrganizationSelectionType != nil {
-		orgSelection = *te.OrganizationSelectionType
-	}
+	orgSelection := te.GetOrganizationSelectionType()
 	if orgSelection == "" {
 		orgSelection = "disabled"
 	}
 	if err = d.Set("organization_selection_type", orgSelection); err != nil {
 		return diag.FromErr(err)
 	}
-	if te.GroupID != "" {
-		if err = d.Set("group_id", te.GroupID); err != nil {
-			return diag.FromErr(err)
-		}
-	} else {
-		if err = d.Set("group_id", ""); err != nil {
-			return diag.FromErr(err)
-		}
+	if err = d.Set("group_id", te.GetGroupID()); err != nil {
+		return diag.FromErr(err)
 	}
 
 	return nil
@@ -286,9 +271,16 @@ func resourceGithubEnterpriseTeamImport(_ context.Context, d *schema.ResourceDat
 	}
 
 	enterpriseSlug, teamID := parts[0], parts[1]
-	d.SetId(teamID)
+	if strings.TrimSpace(enterpriseSlug) == "" {
+		return nil, fmt.Errorf("enterprise slug must not be empty")
+	}
+	id, err := strconv.ParseInt(teamID, 10, 64)
+	if err != nil || id <= 0 {
+		return nil, fmt.Errorf("team ID must be a positive integer: %q", teamID)
+	}
 	if err := d.Set("enterprise_slug", enterpriseSlug); err != nil {
 		return nil, err
 	}
+	d.SetId(teamID)
 	return []*schema.ResourceData{d}, nil
 }
