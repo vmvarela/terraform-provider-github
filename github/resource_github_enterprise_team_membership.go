@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-github/v92/github"
@@ -81,32 +82,39 @@ func resourceGithubEnterpriseTeamMembershipCreate(ctx context.Context, d *schema
 	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
 	username := strings.TrimSpace(d.Get("username").(string))
 
-	team, err := resolveEnterpriseTeam(meta.(*Owner), ctx, enterpriseSlug, d)
+	teamID, slug, err := resolveEnterpriseTeamForCreate(meta.(*Owner), ctx, enterpriseSlug, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if team == nil {
+	if teamID <= 0 {
 		return diag.Errorf("enterprise team not found")
 	}
+	// The membership endpoints accept the numeric team ID directly.
+	teamSelector := strconv.FormatInt(teamID, 10)
 
-	user, _, err := client.Enterprise.AddTeamMember(ctx, enterpriseSlug, team.Slug, username)
+	user, _, err := client.Enterprise.AddTeamMember(ctx, enterpriseSlug, teamSelector, username)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	d.SetId(buildEnterpriseTeamMembershipID(enterpriseSlug, team.Slug, username))
+	// The resource ID keeps the slug (or team_id) selector for compatibility.
+	idSlug := slug
+	if idSlug == "" {
+		idSlug = teamSelector
+	}
+	d.SetId(buildEnterpriseTeamMembershipID(enterpriseSlug, idSlug, username))
 
-	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
+	if err := d.Set("resolved_team_id", int(teamID)); err != nil {
 		return diag.FromErr(err)
 	}
 
 	// Only set team_slug or team_id based on what user provided
 	if _, ok := d.GetOk("team_slug"); ok {
-		if err := d.Set("team_slug", team.Slug); err != nil {
+		if err := d.Set("team_slug", slug); err != nil {
 			return diag.FromErr(err)
 		}
 	} else if _, ok := d.GetOk("team_id"); ok {
-		if err := d.Set("team_id", int(team.ID)); err != nil {
+		if err := d.Set("team_id", int(teamID)); err != nil {
 			return diag.FromErr(err)
 		}
 	}
@@ -127,17 +135,17 @@ func resourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema.R
 		return diag.FromErr(err)
 	}
 	owner, _ := meta.(*Owner)
-	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	teamID, err := enterpriseTeamIDForOperations(owner, ctx, enterpriseSlug, teamSlug, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if team == nil {
+	if teamID == 0 {
 		d.SetId("")
 		return nil
 	}
-	teamSlug = team.Slug
+	teamSelector := strconv.FormatInt(teamID, 10)
 
-	user, resp, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, teamSlug, username)
+	user, resp, err := client.Enterprise.GetTeamMembership(ctx, enterpriseSlug, teamSelector, username)
 	if err != nil {
 		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
 			d.SetId("")
@@ -150,8 +158,7 @@ func resourceGithubEnterpriseTeamMembershipRead(ctx context.Context, d *schema.R
 		return diag.FromErr(err)
 	}
 
-	d.SetId(buildEnterpriseTeamMembershipID(enterpriseSlug, teamSlug, username))
-	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
+	if err := d.Set("resolved_team_id", int(teamID)); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -189,16 +196,16 @@ func resourceGithubEnterpriseTeamMembershipDelete(ctx context.Context, d *schema
 		return diag.FromErr(err)
 	}
 	owner, _ := meta.(*Owner)
-	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	teamID, err := enterpriseTeamIDForOperations(owner, ctx, enterpriseSlug, teamSlug, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if team == nil {
+	if teamID == 0 {
 		return nil
 	}
-	teamSlug = team.Slug
+	teamSelector := strconv.FormatInt(teamID, 10)
 
-	resp, err := client.Enterprise.RemoveTeamMember(ctx, enterpriseSlug, teamSlug, username)
+	resp, err := client.Enterprise.RemoveTeamMember(ctx, enterpriseSlug, teamSelector, username)
 	if err != nil {
 		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
 			return nil

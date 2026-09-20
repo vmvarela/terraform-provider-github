@@ -45,7 +45,7 @@ resource "github_enterprise_team_organizations" "assignments" {
 ### Optional
 
 - `team_id` (Number) The positive numeric ID of the enterprise team. Specify exactly one of team_slug or team_id.
-- `team_slug` (String) The slug of the enterprise team. Specify exactly one of team_slug or team_id. Not ForceNew so an out-of-band team rename updates in place, keeping the stable numeric identity.
+- `team_slug` (String) The slug of the enterprise team. Specify exactly one of team_slug or team_id. Not ForceNew: updates verify it still resolves to the managed team's numeric identity.
 
 ### Read-Only
 
@@ -66,10 +66,10 @@ terraform import github_enterprise_team_organizations.assignments enterprise-slu
 
 ## Team identity and renames
 
-Prefer `team_id = github_enterprise_team.team.team_id` when managing the team in the same configuration. It remains stable when the team's name and slug change. `team_slug` is still supported, but a slug change that remains in the plan requires replacement; update literal slugs after renaming a team.
+Prefer `team_id = github_enterprise_team.team.team_id` when managing the team in the same configuration. It remains stable when the team's name and slug change. `team_slug` is still supported and updates in place while it still resolves to the managed team.
 
-The provider records `resolved_team_id` when creating, importing, or refreshing this resource. Subsequent operations verify that numeric identity, follow renames, and refresh the slug in the resource ID without adopting another team that reuses the old slug.
+The provider records `resolved_team_id` when creating, importing, or refreshing this resource. The organization-assignment APIs accept the numeric team ID in place of a slug, so refreshes, updates, and deletions address the team by its stored numeric identity without any ID-to-slug resolution and without refreshing a configured `team_slug` merely to discover the team's current slug. On update with `team_slug` configured, the provider first verifies that the slug still resolves to the managed team: a nonexistent slug (for example after an out-of-band rename) or a slug resolving to a different team is rejected before any organization change — set the team's current slug (or switch to `team_id`) and apply again. To manage a different team, import it instead of changing `team_slug`. Legacy state that still carries only a slug bootstraps `resolved_team_id` with a single lookup on refresh.
 
-Import with `enterprise-slug/12345` when configuring `team_id`, or `enterprise-slug/ent:platform` when configuring `team_slug`. Match the import selector to the configuration to avoid replacement. Existing slug-based import IDs remain supported. Existing state gains `resolved_team_id` on refresh without a schema migration. If using a development build that predates this attribute, refresh before renaming teams. Legacy state containing only a slug cannot distinguish a renamed team from another team that has already reused that slug; verify the intended team and re-import using its current slug if a rename already occurred.
+Import with `enterprise-slug/12345` when configuring `team_id`, or `enterprise-slug/ent:platform` when configuring `team_slug`. Match the import selector to the configuration to avoid replacement, and keep the selector in the resource ID. Existing slug-based import IDs remain supported. Existing state gains `resolved_team_id` on refresh without a schema migration. If using a development build that predates this attribute, refresh before renaming teams. Legacy state containing only a slug cannot distinguish a renamed team from another team that has already reused that slug; verify the intended team and re-import using its current slug if a rename already occurred.
 
 This resource manages the complete set of organization assignments. Import a team with existing assignments before managing them; creation refuses to take over existing assignments silently.

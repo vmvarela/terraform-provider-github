@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-github/v92/github"
@@ -43,7 +44,7 @@ func resourceGithubEnterpriseTeamOrganizations() *schema.Resource {
 			"team_slug": {
 				Type:             schema.TypeString,
 				Optional:         true,
-				Description:      "The slug of the enterprise team. Specify exactly one of team_slug or team_id. Not ForceNew so an out-of-band team rename updates in place, keeping the stable numeric identity.",
+				Description:      "The slug of the enterprise team. Specify exactly one of team_slug or team_id. Not ForceNew: updates verify it still resolves to the managed team's numeric identity.",
 				ExactlyOneOf:     []string{"team_slug", "team_id"},
 				ValidateDiagFunc: validation.ToDiagFunc(validation.All(validation.StringIsNotWhiteSpace, validation.StringIsNotEmpty)),
 			},
@@ -80,17 +81,19 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 	client := meta.(*Owner).v3client
 	enterpriseSlug := strings.TrimSpace(d.Get("enterprise_slug").(string))
 
-	team, err := resolveEnterpriseTeam(meta.(*Owner), ctx, enterpriseSlug, d)
+	teamID, slug, err := resolveEnterpriseTeamForCreate(meta.(*Owner), ctx, enterpriseSlug, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if team == nil {
+	if teamID <= 0 {
 		return diag.Errorf("enterprise team not found")
 	}
+	// The assignment endpoints accept the numeric team ID directly.
+	teamSelector := strconv.FormatInt(teamID, 10)
 
 	// Verify no organizations are already assigned (authoritative resource).
 	// A 404 here means the team has no assignments yet — treat as empty and proceed.
-	existing, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, team.Slug)
+	existing, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSelector)
 	if err != nil {
 		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
 			existing = nil
@@ -99,7 +102,7 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 		}
 	}
 	if len(existing) > 0 {
-		return diag.Errorf("%q already has organizations assigned; import first or remove manually", team.Slug)
+		return diag.Errorf("team %d already has organizations assigned; import first or remove manually", teamID)
 	}
 
 	orgSlugsSet := d.Get("organization_slugs").(*schema.Set)
@@ -109,24 +112,29 @@ func resourceGithubEnterpriseTeamOrganizationsCreate(ctx context.Context, d *sch
 		orgSlugs = append(orgSlugs, strings.ToLower(slug))
 	}
 
-	_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, team.Slug, orgSlugs)
+	_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, teamSelector, orgSlugs)
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, team.Slug))
+	// The resource ID keeps the slug (or team_id) selector for compatibility.
+	idSlug := slug
+	if idSlug == "" {
+		idSlug = teamSelector
+	}
+	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, idSlug))
 
-	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
+	if err := d.Set("resolved_team_id", int(teamID)); err != nil {
 		return diag.FromErr(err)
 	}
 
 	// Only set team_slug or team_id based on what user provided
 	if _, ok := d.GetOk("team_slug"); ok {
-		if err := d.Set("team_slug", team.Slug); err != nil {
+		if err := d.Set("team_slug", slug); err != nil {
 			return diag.FromErr(err)
 		}
 	} else if _, ok := d.GetOk("team_id"); ok {
-		if err := d.Set("team_id", int(team.ID)); err != nil {
+		if err := d.Set("team_id", int(teamID)); err != nil {
 			return diag.FromErr(err)
 		}
 	}
@@ -141,17 +149,17 @@ func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schem
 	}
 
 	owner, _ := meta.(*Owner)
-	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	teamID, err := enterpriseTeamIDForOperations(owner, ctx, enterpriseSlug, teamSlug, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if team == nil {
+	if teamID == 0 {
 		d.SetId("")
 		return nil
 	}
-	teamSlug = team.Slug
+	teamSelector := strconv.FormatInt(teamID, 10)
 
-	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSlug)
+	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSelector)
 	if err != nil {
 		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
 			d.SetId("")
@@ -165,8 +173,7 @@ func resourceGithubEnterpriseTeamOrganizationsRead(ctx context.Context, d *schem
 		slugs[i] = strings.ToLower(slug)
 	}
 
-	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, teamSlug))
-	if err := d.Set("resolved_team_id", int(team.ID)); err != nil {
+	if err := d.Set("resolved_team_id", int(teamID)); err != nil {
 		return diag.FromErr(err)
 	}
 
@@ -200,40 +207,43 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 	}
 
 	owner, _ := meta.(*Owner)
-	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	teamID, err := enterpriseTeamIDForOperations(owner, ctx, enterpriseSlug, teamSlug, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if team == nil {
+	if teamID == 0 {
 		return diag.Errorf("enterprise team no longer exists")
 	}
-	teamSlug = team.Slug
+	teamSelector := strconv.FormatInt(teamID, 10)
 
-	// Identity guard: team_slug is not ForceNew so an out-of-band rename updates
-	// in place against the stable resolved_team_id, but a config change pointing
-	// at a different existing team must be rejected before any add/remove
-	// mutation instead of silently re-pointing the assignments.
-	if _, ok := d.GetOk("team_slug"); ok {
-		requestedSlug := strings.TrimSpace(d.Get("team_slug").(string))
-		resolvedID := int64(d.Get("resolved_team_id").(int))
-		if requestedSlug != "" && resolvedID > 0 && requestedSlug != teamSlug {
-			requested, _, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, requestedSlug)
-			if err != nil {
-				// Only a typed 404 means the requested slug no longer exists
-				// (stale config after an out-of-band rename) and the update
-				// may proceed with the stable identity. Any other lookup
-				// failure (403, 5xx, context, malformed) must not be treated
-				// as a rename — surface it and skip all mutations.
-				ghErr, ok := errors.AsType[*github.ErrorResponse](err)
-				if !ok || ghErr.Response == nil || ghErr.Response.StatusCode != http.StatusNotFound {
-					return diag.FromErr(err)
-				}
-			} else if requested.ID != resolvedID {
+	// Identity guard: team_slug is not ForceNew so a configured slug change
+	// updates in place against the stable resolved_team_id, but the configured
+	// team_slug must exist and resolve to the managed team's numeric ID before
+	// any add/remove mutation. A nonexistent slug is an invalid config, never a
+	// rename hint, and a slug resolving to another team must not silently
+	// re-point the assignments.
+	idSlug := teamSlug
+	if v, ok := d.GetOk("team_slug"); ok {
+		requestedSlug := strings.TrimSpace(v.(string))
+		if requestedSlug == "" {
+			return diag.Errorf("team_slug must not be empty")
+		}
+		requested, _, err := client.Enterprise.GetTeam(ctx, enterpriseSlug, requestedSlug)
+		if err != nil {
+			// A nonexistent configured slug is an error, not a rename: surface
+			// it and skip all mutations. Only 403/5xx/context failures surface
+			// their raw error; a 404 gets the same invalid-slug diagnostic.
+			return diag.Errorf("team_slug %q does not exist in enterprise %q: %s", requestedSlug, enterpriseSlug, err)
+		}
+		if requested == nil || requested.ID != teamID {
+			if requested != nil {
 				return diag.Errorf(
 					"team_slug %q resolves to a different enterprise team (ID %d, slug %q) than the managed team (resolved_team_id %d); to manage a different team, import it instead of changing team_slug",
-					requestedSlug, requested.ID, requested.Slug, resolvedID)
+					requestedSlug, requested.ID, requested.Slug, teamID)
 			}
+			return diag.Errorf("team_slug %q does not resolve to the managed enterprise team (resolved_team_id %d)", requestedSlug, teamID)
 		}
+		idSlug = requestedSlug
 	}
 
 	if d.HasChange("organization_slugs") {
@@ -250,7 +260,7 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 				slug, _ := item.(string)
 				addSlugs = append(addSlugs, strings.ToLower(slug))
 			}
-			_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, teamSlug, addSlugs)
+			_, _, err = client.Enterprise.AddMultipleAssignments(ctx, enterpriseSlug, teamSelector, addSlugs)
 			if err != nil {
 				return diag.FromErr(err)
 			}
@@ -262,14 +272,14 @@ func resourceGithubEnterpriseTeamOrganizationsUpdate(ctx context.Context, d *sch
 				slug, _ := item.(string)
 				removeSlugs = append(removeSlugs, strings.ToLower(slug))
 			}
-			_, _, err = client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
+			_, _, err = client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSelector, removeSlugs)
 			if err != nil {
 				return diag.FromErr(err)
 			}
 		}
 	}
 
-	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, teamSlug))
+	d.SetId(buildEnterpriseTeamOrganizationsID(enterpriseSlug, idSlug))
 	return nil
 }
 
@@ -281,16 +291,16 @@ func resourceGithubEnterpriseTeamOrganizationsDelete(ctx context.Context, d *sch
 	}
 
 	owner, _ := meta.(*Owner)
-	team, err := resolveStoredEnterpriseTeam(owner, ctx, enterpriseSlug, teamSlug, d)
+	teamID, err := enterpriseTeamIDForOperations(owner, ctx, enterpriseSlug, teamSlug, d)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	if team == nil {
+	if teamID == 0 {
 		return nil
 	}
-	teamSlug = team.Slug
+	teamSelector := strconv.FormatInt(teamID, 10)
 
-	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSlug)
+	orgs, err := listAllEnterpriseTeamOrganizations(meta.(*Owner), ctx, enterpriseSlug, teamSelector)
 	if err != nil {
 		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
 			return nil
@@ -301,7 +311,7 @@ func resourceGithubEnterpriseTeamOrganizationsDelete(ctx context.Context, d *sch
 	removeSlugs := organizationSlugs(orgs)
 
 	if len(removeSlugs) > 0 {
-		_, resp, err := client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSlug, removeSlugs)
+		_, resp, err := client.Enterprise.RemoveMultipleAssignments(ctx, enterpriseSlug, teamSelector, removeSlugs)
 		if err != nil {
 			if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
 				return nil

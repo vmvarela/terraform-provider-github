@@ -80,15 +80,59 @@ func findEnterpriseTeamByID(meta *Owner, ctx context.Context, enterpriseSlug str
 	return nil, nil
 }
 
-// resolveEnterpriseTeam fetches the enterprise team referenced by team_slug,
-// falling back to a numeric team_id lookup when no slug is set (the schema
-// enforces ExactlyOneOf between the two).
-func resolveEnterpriseTeam(meta *Owner, ctx context.Context, enterpriseSlug string, d *schema.ResourceData) (*github.EnterpriseTeam, error) {
+// storedEnterpriseTeamID returns the numeric team identity recorded in state,
+// preferring resolved_team_id and falling back to a configured team_id.
+func storedEnterpriseTeamID(d *schema.ResourceData) int64 {
+	if v, ok := d.GetOk("resolved_team_id"); ok {
+		if id, _ := v.(int); id > 0 {
+			return int64(id)
+		}
+	}
+	if v, ok := d.GetOk("team_id"); ok {
+		if id, _ := v.(int); id > 0 {
+			return int64(id)
+		}
+	}
+	return 0
+}
+
+// enterpriseTeamIDForOperations returns the numeric identity to address the
+// team by in membership and organization-assignment API calls, which accept
+// either a slug or a numeric ID. State with a recorded identity needs no team
+// lookup at all; legacy state and slug-based imports bootstrap the ID with a
+// single GetTeam. Returns 0 when the team no longer exists.
+func enterpriseTeamIDForOperations(meta *Owner, ctx context.Context, enterpriseSlug, slug string, d *schema.ResourceData) (int64, error) {
+	if id := storedEnterpriseTeamID(d); id > 0 {
+		return id, nil
+	}
+	team, _, err := meta.v3client.Enterprise.GetTeam(ctx, enterpriseSlug, slug)
+	if err != nil {
+		if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
+			return 0, nil
+		}
+		return 0, err
+	}
+	if team == nil {
+		return 0, nil
+	}
+	return team.ID, nil
+}
+
+// resolveEnterpriseTeamForCreate resolves the configured selector to the
+// team's numeric ID, looking the team up only when team_slug is configured.
+// The returned slug is empty when the caller configured team_id.
+func resolveEnterpriseTeamForCreate(meta *Owner, ctx context.Context, enterpriseSlug string, d *schema.ResourceData) (int64, string, error) {
 	if v, ok := d.GetOk("team_slug"); ok {
 		team, _, err := meta.v3client.Enterprise.GetTeam(ctx, enterpriseSlug, v.(string))
-		return team, err
+		if err != nil {
+			return 0, "", err
+		}
+		if team == nil {
+			return 0, "", fmt.Errorf("enterprise team not found")
+		}
+		return team.ID, team.Slug, nil
 	}
-	return findEnterpriseTeamByID(meta, ctx, enterpriseSlug, int64(d.Get("team_id").(int)))
+	return int64(d.Get("team_id").(int)), "", nil
 }
 
 // findEnterpriseTeamByIdentity treats the slug as a hint, never as proof of identity.
@@ -104,27 +148,6 @@ func findEnterpriseTeamByIdentity(meta *Owner, ctx context.Context, enterpriseSl
 		}
 	}
 	return findEnterpriseTeamByID(meta, ctx, enterpriseSlug, id)
-}
-
-func resolveStoredEnterpriseTeam(meta *Owner, ctx context.Context, enterpriseSlug, slug string, d *schema.ResourceData) (*github.EnterpriseTeam, error) {
-	if id, ok := d.GetOk("resolved_team_id"); ok {
-		teamID, _ := id.(int)
-		return findEnterpriseTeamByIdentity(meta, ctx, enterpriseSlug, slug, int64(teamID))
-	}
-	if id, ok := d.GetOk("team_id"); ok {
-		teamID, _ := id.(int)
-		// A numeric import ID has no slug hint until the first refresh.
-		if slug == strconv.Itoa(teamID) {
-			slug = ""
-		}
-		return findEnterpriseTeamByIdentity(meta, ctx, enterpriseSlug, slug, int64(teamID))
-	}
-	// Import and legacy state do not yet contain a numeric identity.
-	team, _, err := meta.v3client.Enterprise.GetTeam(ctx, enterpriseSlug, slug)
-	if ghErr, ok := errors.AsType[*github.ErrorResponse](err); ok && ghErr.Response != nil && ghErr.Response.StatusCode == http.StatusNotFound {
-		return nil, nil
-	}
-	return team, err
 }
 
 // organizationSlugs extracts the non-empty logins of the given organizations.
