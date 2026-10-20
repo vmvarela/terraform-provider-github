@@ -4,30 +4,19 @@ changelog:
   categories:
     - title: 💥 Breaking Changes
       labels:
-        - "Type: Breaking change"
+        - "breaking"
 
     - title: 🚀 New Features
       labels:
-        - "Type: Feature"
-        - "New data source"
-        - "New resource"
+        - "enhancement"
 
     - title: 🐛 Bugfixes
       labels:
-        - "Type: Bug"
-
-    - title: 🪦 Deprecations
-      labels:
-        - "Deprecation"
-
-    - title: 🛠️ Maintenance
-      labels:
-        - "Type: Maintenance"
-        - "dependencies"
+        - "bug"
 
     - title: 📝 Documentation
       labels:
-        - "Type: Documentation"
+        - "documentation"
 
     - title: 🏷 Other Changes
       labels:
