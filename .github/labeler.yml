@@ -1,7 +1,6 @@
-# Configuration for actions/labeler
-# Labels must match the github-scrum label system (namespaced prefixes).
+# Configuration for actions/labeler. Labels are standard GitHub labels.
 
-"type:feature":
+enhancement:
   - head-branch:
       - '^feat/'
       - '^feature/'
@@ -10,34 +9,15 @@
           - "github/resource_*.go"
           - "github/data_source_*.go"
 
-"type:bug":
+bug:
   - head-branch:
       - '^fix/'
       - '^bugfix/'
 
-"type:chore":
-  - head-branch:
-      - '^chore/'
-      - '^maint/'
-      - '^deps/'
-  - changed-files:
-      - any-glob-to-any-file:
-          - ".github/**"
-          - "GNUmakefile"
-          - ".goreleaser.yml"
-          - ".golangci.yml"
-          - ".gitignore"
-          - "go.mod"
-          - "go.sum"
-
-"type:docs":
+documentation:
   - head-branch:
       - '^docs/'
   - changed-files:
       - any-glob-to-any-file:
           - "**/*.md"
           - "website/**"
-
-"type:spike":
-  - head-branch:
-      - '^spike/'

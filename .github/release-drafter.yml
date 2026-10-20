@@ -9,45 +9,30 @@ template: |
 categories:
   - title: "🚀 Features"
     labels:
-      - "type:feature"
+      - "enhancement"
   - title: "🐛 Bug Fixes"
     labels:
-      - "type:bug"
-  - title: "🧰 Maintenance"
-    labels:
-      - "type:chore"
-      - "tech-debt"
+      - "bug"
   - title: "📝 Documentation"
     labels:
-      - "type:docs"
-  - title: "🔬 Spikes & Research"
-    labels:
-      - "type:spike"
+      - "documentation"
 change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
 change-title-escapes: '\<*_&'
 autolabeler:
-  - label: "type:feature"
+  - label: "enhancement"
     title:
       - '/^feat(\(.+\))?!?:/i'
-  - label: "type:bug"
+  - label: "bug"
     title:
       - '/^fix(\(.+\))?!?:/i'
-  - label: "type:docs"
+  - label: "documentation"
     title:
       - '/^docs(\(.+\))?!?:/i'
-  - label: "type:chore"
-    title:
-      - '/^(chore|refactor|test|build|ci|perf|style)(\(.+\))?!?:/i'
-  - label: "type:spike"
-    title:
-      - '/^spike(\(.+\))?!?:/i'
 version-resolver:
   patch:
     labels:
       - "breaking"
-      - "type:feature"
-      - "type:bug"
-      - "type:chore"
-      - "type:docs"
-      - "type:spike"
+      - "enhancement"
+      - "bug"
+      - "documentation"
   default: patch

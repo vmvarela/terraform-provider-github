@@ -1,7 +1,7 @@
 name: Maintenance
 description: Dependencies, cleanup, refactoring, reworking of code
 title: "[MAINT]: "
-labels: ["Type: Maintenance", "Status: Triage"]
+labels: []
 body:
   - type: markdown
     attributes:
